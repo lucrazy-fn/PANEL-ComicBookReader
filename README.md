@@ -99,7 +99,7 @@ python -m pip install pillow rarfile
 python ComicReader.py
 ```
 
-> Para arquivos `.cbr`, instale o [WinRAR](https://www.rarlab.com/) em `C:\Program Files\WinRAR\`.
+> Para arquivos `.cbr`, instale o [WinRAR](https://www.win-rar.com/) em `C:\Program Files\WinRAR\`.
 
 ---
 
