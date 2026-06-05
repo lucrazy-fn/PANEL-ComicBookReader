@@ -54,7 +54,7 @@ Panel é um leitor de quadrinhos feito em Python com foco em ser simples, rápid
 | Formato | Suporte |
 |---|---|
 | `.cbz` / `.zip` | ✅ Nativo |
-| `.cbr` / `.rar` | ✅ Com [WinRAR](https://www.rarlab.com/) instalado |
+| `.cbr` / `.rar` | ✅ Com [WinRAR](https://www.win-rar.com/) instalado |
 
 ---
 
