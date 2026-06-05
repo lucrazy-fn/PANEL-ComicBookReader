@@ -10,7 +10,7 @@
 
 ## Download
 
-Baixe o instalador na aba [**Releases**](https://github.com/seuusuario/panel/releases) e execute o `Panel_ComicReader_Setup.exe`.
+Baixe o instalador na aba [**Releases**](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases/tag/v1.0) e execute o `Panel_ComicReader_Setup.exe`.
 
 ---
 
