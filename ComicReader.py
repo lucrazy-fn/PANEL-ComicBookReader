@@ -2,7 +2,6 @@
 ╔══════════════════════════════════════╗
 ║         PANEL — CBZ/CBR Reader       ║
 ║   Zoom · Drag · Page Nav · Themes    ║
-║   v2 — Performance + UX Edition      ║
 ╚══════════════════════════════════════╝
 Requires: pip install pillow rarfile
 Opcional (PDF): pip install pymupdf
@@ -19,7 +18,6 @@ logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(mes
 log = logging.getLogger("panel")
 log.setLevel(logging.DEBUG)
 
-# ── Dependências opcionais ─────────────────────────────────────────────────────
 try:
     import rarfile
     HAS_RAR = True
@@ -27,7 +25,7 @@ except ImportError:
     HAS_RAR = False
 
 try:
-    import fitz  # PyMuPDF
+    import fitz
     HAS_PDF = True
 except ImportError:
     HAS_PDF = False
@@ -39,14 +37,12 @@ except ImportError:
     sys.exit(1)
 
 def resource_path(relative_path):
-    """Pega o caminho correto tanto rodando .py quanto .exe"""
     try:
-        base = sys._MEIPASS  # pasta temporária do PyInstaller
+        base = sys._MEIPASS
     except AttributeError:
         base = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base, relative_path)
 
-# ── Auto-detecção do UnRAR (não hardcode pro WinRAR) ───────────────────────────
 def _setup_unrar():
     if not HAS_RAR:
         return
@@ -65,13 +61,11 @@ def _setup_unrar():
 _setup_unrar()
 
 
-# ── Natural sort (corrige page10 vindo antes de page2) ──────────────────────────
 def natural_key(s: str):
     return [int(t) if t.isdigit() else t.lower()
             for t in re.split(r'(\d+)', str(s))]
 
 
-# ── Idioma ───────────────────────────────────────────────────────────────────
 LANG = "pt"
 TEXTS = {
     "en": {
@@ -116,7 +110,6 @@ TEXTS = {
     },
 }
 
-# ── Temas ────────────────────────────────────────────────────────────────────
 DARK = {
     "bg": "#0d0d12", "surface": "#161620", "surface_alt": "#1e1e2c",
     "surface_hover": "#252536", "border": "#2a2a40", "border_glow": "#c44a2a",
@@ -224,9 +217,6 @@ def get_placeholder_pil() -> Image.Image:
     return _PLACEHOLDER_PIL
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ARCHIVE BACKEND — unifica CBZ/CBR/PDF, lê entries sob demanda
-# ══════════════════════════════════════════════════════════════════════════════
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
 
 class ArchiveBackend:
@@ -237,8 +227,8 @@ class ArchiveBackend:
     """
     def __init__(self, path: str):
         self.path = path
-        self.kind = None          # 'zip' | 'rar' | 'pdf'
-        self.names = []           # nomes de imagem ordenados (zip/rar)
+        self.kind = None
+        self.names = []
         self._pdf_doc = None
         try:
             self._detect()
@@ -287,7 +277,7 @@ class ArchiveBackend:
                 return r.read(self.names[idx])
         elif self.kind == "pdf":
             page = self._pdf_doc.load_page(idx)
-            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x = boa nitidez
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
             return pix.tobytes("png")
         raise ValueError("backend inválido")
 
@@ -346,19 +336,16 @@ def ease_in_out(t):
 def lerp(a, b, t): return a + (b - a) * t
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SmartPageLoader — sliding window de imagens decodificadas, prefetch async
-# ══════════════════════════════════════════════════════════════════════════════
 class SmartPageLoader:
     """
     Carrega páginas sob demanda mantendo só uma janela em RAM.
     Decodifica em thread; entrega PIL.Image (não PhotoImage, pra ser thread-safe).
     """
-    WINDOW = 4  # mantém idx-4..idx+4
+    WINDOW = 4
 
     def __init__(self, path: str):
         self.backend = ArchiveBackend(path)
-        self._cache = {}                 # idx -> PIL.Image (RGBA)
+        self._cache = {}
         self._lock = threading.Lock()
         self._prefetching = set()
 
@@ -370,7 +357,6 @@ class SmartPageLoader:
     def names(self):
         return self.backend.names
 
-    # legado compat
     @property
     def entries(self):
         return self.backend.names
@@ -414,7 +400,6 @@ class SmartPageLoader:
         threading.Thread(target=work, daemon=True).start()
 
     def get_thumbnail_pil(self, idx, tw, th):
-        # tenta usar o cache de disco (muito mais rápido que ler a página inteira)
         cache_file = _cover_cache_path(self.backend.path)
         if idx == 0 and os.path.exists(cache_file):
             try:
@@ -433,9 +418,6 @@ class SmartPageLoader:
             self._cache.clear()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Persistência: progresso, bookmarks, prefs, config de biblioteca
-# ══════════════════════════════════════════════════════════════════════════════
 def _json_load(fpath, default):
     try:
         with open(fpath, "r", encoding="utf-8") as f:
@@ -451,7 +433,7 @@ def _json_save(fpath, data):
         print("save err:", e)
 
 
-_PROGRESS_CACHE: dict = {}       # cache em memória
+_PROGRESS_CACHE: dict = {}
 _PROGRESS_DIRTY = False
 _PROGRESS_TIMER = None
 
@@ -470,10 +452,9 @@ def _flush_progress():
 
 def save_progress(path, page):
     global _PROGRESS_DIRTY, _PROGRESS_TIMER
-    load_progress()  # garante cache carregado
+    load_progress()
     _PROGRESS_CACHE[path] = {"page": page, "ts": time.time()} if isinstance(page, int) else page
     _PROGRESS_DIRTY = True
-    # debounce: escreve no disco só 2s após última chamada
     if _PROGRESS_TIMER is not None:
         try:
             import tkinter as _tk
@@ -510,13 +491,12 @@ def toggle_bookmark(path, page):
         lst.sort()
     bm[path] = lst
     _json_save(BOOKMARKS_FILE, bm)
-    return page in lst  # True se adicionou
+    return page in lst
 
 def get_bookmarks(path):
     return load_bookmarks().get(path, [])
 
 
-# ── Favoritos ────────────────────────────────────────────────────────────────
 def load_favorites():
     return _json_load(FAVORITES_FILE, [])
 
@@ -535,12 +515,10 @@ def is_favorite(path):
     return path in load_favorites()
 
 
-# ── Status manual (Lendo / Concluído sobrescrevem heurística) ────────────────
 def load_manual_status():
     return _json_load(MANUAL_STATUS_FILE, {})
 
 def set_manual_status(path, status):
-    """status: None | 'reading' | 'done'"""
     ms = load_manual_status()
     if status is None:
         ms.pop(path, None)
@@ -562,7 +540,6 @@ def save_prefs(**kwargs):
 
 
 def export_backup(dest_path: str):
-    """Exporta progresso + bookmarks + favoritos para um JSON único."""
     data = {
         "progress":      _json_load(PROGRESS_FILE, {}),
         "bookmarks":     _json_load(BOOKMARKS_FILE, {}),
@@ -574,7 +551,6 @@ def export_backup(dest_path: str):
     _json_save(dest_path, data)
 
 def import_backup(src_path: str):
-    """Importa backup, mesclando com dados existentes."""
     data = _json_load(src_path, {})
     if "progress" in data:
         cur = _json_load(PROGRESS_FILE, {})
