@@ -609,7 +609,6 @@ def collection_read_count(files: list) -> tuple:
     return collection_progress(files)
 
 
-# ── Cache de capas em disco ─────────────────────────────────────────────────────
 def _cover_cache_path(comic_path: str) -> str:
     try:
         mtime = os.path.getmtime(comic_path)
@@ -621,9 +620,6 @@ def _cover_cache_path(comic_path: str) -> str:
     return os.path.join(COVER_CACHE_DIR, f"{h}.webp")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Botão "pílula" moderno
-# ══════════════════════════════════════════════════════════════════════════════
 def make_pill(parent, text, cmd, *, icon=None, variant="ghost",
               font=FSMALL, pad_x=14, pad_y=8, min_w=0, active=False):
     c = THEME
@@ -636,7 +632,7 @@ def make_pill(parent, text, cmd, *, icon=None, variant="ghost",
         base_fill, hover_fill = c["surface_alt"], c["surface_hover"]
         base_fg, hover_fg = c["text"], c["text"]
         base_outline = c["border"]
-    else:  # ghost
+    else:
         base_fill, hover_fill = host_bg, c["surface_hover"]
         base_fg, hover_fg = c["text_dim"], c["text"]
         base_outline = c["border"]
@@ -692,9 +688,6 @@ def make_pill(parent, text, cmd, *, icon=None, variant="ghost",
     return cv
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CoverLoader — usa cache em disco + thread
-# ══════════════════════════════════════════════════════════════════════════════
 class CoverLoader:
     def __init__(self, root: tk.Tk, cache: dict):
         self._root = root
@@ -736,14 +729,12 @@ class CoverLoader:
                 time.sleep(0.02)
 
     def _load(self, path):
-        # 1) Tenta cache em disco
         cache_file = _cover_cache_path(path)
         if os.path.exists(cache_file):
             try:
                 return Image.open(cache_file).convert("RGB")
             except Exception:
                 pass
-        # 2) Gera e salva
         try:
             data = extract_cover_only(path)
             img = Image.open(io.BytesIO(data)).convert("RGB")
@@ -769,9 +760,6 @@ class CoverLoader:
             return None
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Janela de Idioma
-# ══════════════════════════════════════════════════════════════════════════════
 class LangWindow(tk.Toplevel):
     def __init__(self, master, cb):
         super().__init__(master)
@@ -798,9 +786,7 @@ class LangWindow(tk.Toplevel):
         save_prefs(lang=lang)
         self.destroy()
         self.cb()
-# ══════════════════════════════════════════════════════════════════════════════
-# ThumbnailStrip — faixa rolável (consertada, sem bind_all global)
-# ══════════════════════════════════════════════════════════════════════════════
+
 class ThumbnailStrip(tk.Frame):
     def __init__(self, parent, bg_color="#1e1e1e", on_click=None, **kwargs):
         super().__init__(parent, bg=bg_color, **kwargs)
@@ -812,7 +798,6 @@ class ThumbnailStrip(tk.Frame):
         self.win_id = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
         self.inner.bind("<Configure>",
                         lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        # bind LOCAL (não bind_all) — evita sequestrar o scroll do app
         self.canvas.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._wheel))
         self.canvas.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
         self._buttons = {}
@@ -847,9 +832,6 @@ class ThumbnailStrip(tk.Frame):
             pass
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# WebtoonViewer — scroll vertical com LAZY LOADING (não estoura RAM)
-# ══════════════════════════════════════════════════════════════════════════════
 class WebtoonViewer(tk.Toplevel):
     def __init__(self, parent, loader: SmartPageLoader, width=800, height=900):
         super().__init__(parent)
@@ -859,7 +841,7 @@ class WebtoonViewer(tk.Toplevel):
         self.configure(bg=bg)
         self._loader = loader
         self._tw = width - 40
-        self._labels = {}      # idx -> Label
+        self._labels = {}
         self._loaded = set()
         self._placeholders = {}
 
@@ -877,7 +859,6 @@ class WebtoonViewer(tk.Toplevel):
         self.canvas.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._wheel))
         self.canvas.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
 
-        # cria placeholders (altura estimada) para todas as páginas
         self._build_placeholders(bg)
         self.after(60, self._check_visible)
 
@@ -885,7 +866,7 @@ class WebtoonViewer(tk.Toplevel):
         if bg is None:
             bg = THEME["canvas_bg"]
         ph_text = THEME["text_muted"]
-        est_h = int(self._tw * 1.4)  # altura estimada de página
+        est_h = int(self._tw * 1.4)
         for idx in range(self._loader.count):
             lbl = tk.Label(self.inner, bg=bg, text=f"··· {idx+1} ···",
                            fg=ph_text, height=int(est_h / 18))
@@ -931,9 +912,6 @@ class WebtoonViewer(tk.Toplevel):
         threading.Thread(target=work, daemon=True).start()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ReaderWindow — leitor principal
-# ══════════════════════════════════════════════════════════════════════════════
 class ReaderWindow(tk.Toplevel):
     ZSTEP = 0.15
     ZMIN  = 0.1
@@ -949,20 +927,19 @@ class ReaderWindow(tk.Toplevel):
 
         self._path      = path
         self._loader    = loader
-        self._on_finish = on_finish          # callback p/ próxima edição
+        self._on_finish = on_finish
         self._idx       = 0
         self._zoom      = self.Z0
         self._offset    = [0, 0]
         self._drag      = None
         self._tk_img    = None
-        self._rotation  = 0                  # graus
+        self._rotation  = 0
         self._brightness = 1.0
         self._double    = False
         self._immersive = False
         self._fading    = False
         self._slider    = None
 
-        # prefs
         prefs = load_prefs()
         self._manga = prefs.get("manga", False)
 
@@ -972,7 +949,6 @@ class ReaderWindow(tk.Toplevel):
         self.minsize(800, 600)
         self.protocol("WM_DELETE_WINDOW", self._close)
 
-        # restaura progresso
         p = get_progress_page(path)
         if p is not None and 0 <= p < loader.count:
             self._idx = p
@@ -988,13 +964,11 @@ class ReaderWindow(tk.Toplevel):
     def _count(self):
         return self._loader.count
 
-    # ── Build UI ────────────────────────────────────────────────────────────
     def _build(self):
         for w in self.winfo_children():
             w.destroy()
         c = THEME
 
-        # Header
         self._top = tk.Frame(self, bg=c["surface"], height=58)
         self._top.pack(fill="x")
         self._top.pack_propagate(False)
@@ -1020,11 +994,9 @@ class ReaderWindow(tk.Toplevel):
         self._mkbtn(right, TEXTS[LANG]["fit"], self._fit).pack(side="right", padx=3)
         self._mkbtn(right, current_theme_label(), self._toggle_theme, icon=ICONS.get("theme")).pack(side="right", padx=3)
 
-        # bookmark toggle
         self._bm_btn = self._pill(right, self._bm_label(), self._toggle_bookmark, variant="soft")
         self._bm_btn.pack(side="right", padx=3)
 
-        # manga toggle
         txt = TEXTS[LANG]["manga_on"] if self._manga else TEXTS[LANG]["manga_off"]
         self._manga_btn = self._pill(right, txt, self._toggle_manga, variant="soft")
         self._manga_btn.pill_set_active(self._manga)
@@ -1032,11 +1004,9 @@ class ReaderWindow(tk.Toplevel):
 
         tk.Frame(self, bg=c["accent"], height=2).pack(fill="x")
 
-        # Canvas página
         self._cv = tk.Canvas(self, bg=c["canvas_bg"], highlightthickness=0, cursor="crosshair")
         self._cv.pack(fill="both", expand=True)
 
-        # Footer
         self._bot = tk.Frame(self, bg=c["surface"], height=66)
         self._bot.pack(fill="x")
         self._bot.pack_propagate(False)
@@ -1073,7 +1043,6 @@ class ReaderWindow(tk.Toplevel):
         sl.pack(side="left", padx=(8, 0))
         self._slider = sl
 
-        # extras: girar, brilho, dupla, miniaturas
         self._thumb_btn = self._pill(ib, "⊟  Miniaturas", self._toggle_thumbnails, variant="soft")
         self._thumb_btn.pack(side="right", padx=6)
         self._double_btn = self._pill(ib, "▭▭ Dupla", self._toggle_double, variant="soft")
@@ -1081,7 +1050,6 @@ class ReaderWindow(tk.Toplevel):
         self._nav_btn(ib, "↻", self._rotate).pack(side="right", padx=3)
         self._nav_btn(ib, "?", self._show_shortcuts).pack(side="right", padx=3)
 
-        # slider de brilho
         bf = tk.Frame(ib, bg=c["surface"]); bf.pack(side="right", padx=(0, 8))
         tk.Label(bf, text="☀", font=(_SANS, 9), bg=c["surface"], fg=c["text_dim"]).pack(side="left", padx=(0, 2))
         self._bright_var = tk.DoubleVar(value=self._brightness)
@@ -1093,12 +1061,9 @@ class ReaderWindow(tk.Toplevel):
                              sliderrelief="flat", length=90, showvalue=False, bd=0)
         bright_sl.pack(side="left")
 
-        # strip oculta — começa fora do layout
         self._thumb_frame = tk.Frame(self, bg=c["surface"], height=120)
         self._thumb_frame.pack_propagate(False)
-        # NÃO faz pack aqui; só aparece quando _open_thumbnails() chamar .pack()
 
-        # binds
         self._cv.bind("<ButtonPress-1>",  self._drag_start)
         self._cv.bind("<B1-Motion>",      self._drag_move)
         self._cv.bind("<ButtonRelease-1>",self._drag_end)
@@ -1122,7 +1087,6 @@ class ReaderWindow(tk.Toplevel):
         self.bind("<bracketleft>",  lambda e: self._set_brightness(self._brightness - 0.1))
         self.bind("<bracketright>", lambda e: self._set_brightness(self._brightness + 0.1))
 
-    # ── helpers de botão ──────────────────────────────────────────────────────
     def _pill(self, parent, text, cmd, *, icon=None, variant="ghost",
               font=FSMALL, pad_x=14, pad_y=8, min_w=0):
         return make_pill(parent, text, cmd, icon=icon, variant=variant,
@@ -1151,7 +1115,6 @@ class ReaderWindow(tk.Toplevel):
         cv.bind("<Button-1>", lambda e: cmd())
         return cv
 
-    # ── Render da página ──────────────────────────────────────────────────────
     def _processed_pil(self, idx):
         """Aplica rotação + brilho."""
         img = self._loader.get_pil(idx)
@@ -1166,10 +1129,8 @@ class ReaderWindow(tk.Toplevel):
         base = self._processed_pil(self._idx)
         if not self._double:
             return base
-        # página 0 = capa, sempre aparece sozinha (padrão HQ ocidental)
         if self._idx == 0:
             return base
-        # double-page: junta idx e idx+1 lado a lado (ordem respeita mangá)
         nxt_idx = self._idx + 1
         if nxt_idx >= self._count:
             return base
@@ -1216,7 +1177,7 @@ class ReaderWindow(tk.Toplevel):
         if new_idx == self._idx: return
         self._fading = True
         start = time.perf_counter()
-        self._loader.get_pil(new_idx)  # garante decodificada
+        self._loader.get_pil(new_idx)
 
         def animate():
             elapsed = time.perf_counter() - start
@@ -1257,7 +1218,6 @@ class ReaderWindow(tk.Toplevel):
             self._prog_cv.create_rectangle(0, 0, filled, 2, fill=THEME["accent2"], outline="")
             self._prog_cv.create_oval(filled-4, -1, filled+4, h+1,
                                       fill=THEME["accent2"], outline="")
-        # marca bookmarks
         for bm in get_bookmarks(self._path):
             bx = int(pw * (bm + 0.5) / n)
             self._prog_cv.create_rectangle(bx-1, 0, bx+1, h, fill="#ffd24a", outline="")
@@ -1275,7 +1235,6 @@ class ReaderWindow(tk.Toplevel):
         self._update_progress_bar()
         if self._thumb_visible and self._thumb_strip:
             self._thumb_strip.highlight(self._idx)
-        # botão "Marcar como concluído" na última página
         self._update_done_btn()
 
     def _bm_label(self):
@@ -1298,7 +1257,6 @@ class ReaderWindow(tk.Toplevel):
                 self._done_pill.pack()
                 self._done_overlay.place(relx=0.5, rely=0.92, anchor="center")
             else:
-                # atualiza texto/cor sem recriar
                 is_done = get_manual_status(self._path) == "done"
                 lbl_txt = "✓  Concluído!" if is_done else "✓  Marcar como Concluído"
                 if hasattr(self._done_pill, "pill_set_text"):
@@ -1313,14 +1271,12 @@ class ReaderWindow(tk.Toplevel):
         set_manual_status(self._path, None if cur == "done" else "done")
         self._update_done_btn()
 
-    # ── Navegação ─────────────────────────────────────────────────────────────
     def _step(self):
         return 2 if self._double else 1
 
     def _next(self):
         nxt = self._idx - self._step() if self._manga else self._idx + self._step()
         if nxt >= self._count or nxt < 0:
-            # chegou no fim → oferece próxima edição
             if (not self._manga and self._idx + self._step() >= self._count) or \
                (self._manga and self._idx - self._step() < 0):
                 self._maybe_next_chapter()
@@ -1344,7 +1300,6 @@ class ReaderWindow(tk.Toplevel):
         frac = max(0.0, min(1.0, e.x / pw))
         self._fade_to(int(frac * (self._count - 1)))
 
-    # ── Zoom / Fit / Drag ─────────────────────────────────────────────────────
     def _set_zoom(self, z):
         self._zoom = max(self.ZMIN, min(self.ZMAX, z))
         self._show(reset=False)
@@ -1369,26 +1324,21 @@ class ReaderWindow(tk.Toplevel):
             self._offset[0] += dx
             self._offset[1] += dy
             self._drag = (e.x, e.y)
-            # move apenas o item no canvas sem re-render (muito mais rápido)
             self._cv.move("all", dx, dy)
     def _drag_end(self, e):
         self._drag = None; self._cv.config(cursor="crosshair")
-        # re-render de alta qualidade ao soltar
         self._show(reset=False)
 
     def _wheel(self, e):
         d = e.delta / 120 if e.delta else 0
         if e.state & 0x4:
-            # zoom centrado no cursor do mouse
             old_zoom = self._zoom
             new_zoom = max(self.ZMIN, min(self.ZMAX, self._zoom + d * self.ZSTEP))
             if new_zoom != old_zoom:
                 cw = self._cv.winfo_width() or 800
                 ch = self._cv.winfo_height() or 600
-                # posição do mouse relativa ao centro do canvas
                 mx = e.x - cw // 2
                 my = e.y - ch // 2
-                # ajusta offset para manter o ponto sob o cursor fixo
                 ratio = new_zoom / old_zoom
                 self._offset[0] = mx - (mx - self._offset[0]) * ratio
                 self._offset[1] = my - (my - self._offset[1]) * ratio
@@ -1397,7 +1347,6 @@ class ReaderWindow(tk.Toplevel):
         else:
             (self._prev if d > 0 else self._next)()
 
-    # ── Toggles ───────────────────────────────────────────────────────────────
     def _rotate(self):
         self._rotation = (self._rotation + 90) % 360
         self._show(reset=True)
@@ -1506,7 +1455,6 @@ class ReaderWindow(tk.Toplevel):
         WebtoonViewer(self, self._loader,
                       width=self.winfo_width(), height=self.winfo_height())
 
-    # ── Miniaturas ────────────────────────────────────────────────────────────
     def _toggle_thumbnails(self):
         if self._thumb_visible:
             self._thumb_visible = False
@@ -1530,7 +1478,6 @@ class ReaderWindow(tk.Toplevel):
         self._thumb_strip = ThumbnailStrip(self._thumb_frame, bg_color=THEME["surface"],
                                            on_click=self._fade_to)
         self._thumb_strip.pack(fill="both", expand=True)
-        # pack o frame antes do _bot se ainda não estiver visível
         if not self._thumb_frame.winfo_ismapped():
             self._thumb_frame.pack(fill="x", before=self._bot)
         threading.Thread(target=self._load_thumbs_bg, daemon=True).start()
@@ -1554,9 +1501,7 @@ class ReaderWindow(tk.Toplevel):
         try: self._loader.close()
         except Exception as _e: log.debug("silenced: %s", _e)
         self.destroy()
-# ══════════════════════════════════════════════════════════════════════════════
-# ComicCard — card com hover animado
-# ══════════════════════════════════════════════════════════════════════════════
+
 class ComicCard:
     HOVER_STEPS = 10
     HOVER_MS    = 14
@@ -1641,7 +1586,6 @@ class ComicCard:
         bw = 2 if alpha > 0.4 else 1
         _rrect(cv, px, py, px + iw - 1, py + ih - 1, CARD_R, outline=border_col, width=bw)
 
-        # ── badges de status e favorito ──────────────────────────────────────
         status = get_manual_status(self._path)
         if status == "done":
             cv.create_oval(px+4, py+4, px+18, py+18, fill="#2a5c3a", outline="")
@@ -1666,7 +1610,6 @@ class ComicCard:
                        relief="flat", borderwidth=1,
                        font=FSMALL)
 
-        # ── Favorito ────────────────────────────────────────────────────────
         fav_label = "★  Desfavoritar" if is_favorite(path) else "☆  Favoritar"
         def toggle_fav():
             toggle_favorite(path)
@@ -1674,12 +1617,11 @@ class ComicCard:
         menu.add_command(label=fav_label, command=toggle_fav)
         menu.add_separator()
 
-        # ── Status ──────────────────────────────────────────────────────────
         cur = get_manual_status(path)
 
         def set_reading():
             if cur == "reading":
-                set_manual_status(path, None)   # desmarca
+                set_manual_status(path, None)
             else:
                 set_manual_status(path, "reading")
             self._draw(self._alpha)
@@ -1688,7 +1630,7 @@ class ComicCard:
 
         def set_done():
             if cur == "done":
-                set_manual_status(path, None)   # desmarca
+                set_manual_status(path, None)
             else:
                 set_manual_status(path, "done")
             self._draw(self._alpha)
@@ -1724,9 +1666,6 @@ class ComicCard:
     def grid(self, **kwargs): self.frame.grid(**kwargs)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CollectionCard — pilha de capas
-# ══════════════════════════════════════════════════════════════════════════════
 class CollectionCard:
     HOVER_STEPS = 10
     HOVER_MS    = 14
@@ -1754,7 +1693,6 @@ class CollectionCard:
         self._capas_pil = []
         for fpath in files[:3]:
             try:
-                # usa cache em disco se houver
                 cf = _cover_cache_path(fpath)
                 if os.path.exists(cf):
                     self._capas_pil.append(Image.open(cf).convert("RGB"))
@@ -1893,9 +1831,6 @@ class CollectionCard:
     def grid(self, **kwargs): self.frame.grid(**kwargs)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Coleções / Séries / ComicInfo
-# ══════════════════════════════════════════════════════════════════════════════
 def _serie_name(filename: str) -> str:
     stem = Path(filename).stem
     stem = re.sub(r'\s*[\(\[]?\d{4}[\)\]]?\s*', ' ', stem)
@@ -2004,9 +1939,6 @@ def comic_display_title(path):
     return Path(path).stem
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MetaTooltip (igual ao seu)
-# ══════════════════════════════════════════════════════════════════════════════
 class MetaTooltip:
     def __init__(self, root):
         self._root = root
@@ -2066,9 +1998,7 @@ class MetaTooltip:
         if wy + th > sh - 10: wy = sh - th - 10
         self._win.geometry(f"+{wx}+{wy}")
         self._win.configure(highlightbackground=c["border"], highlightthickness=1)
-# ══════════════════════════════════════════════════════════════════════════════
-# SearchBubble — bolha de busca flutuante (igual ao seu, com cleanup)
-# ══════════════════════════════════════════════════════════════════════════════
+
 class SearchBubble:
     BUBBLE_SIZE  = 46
     BUBBLE_ANIM  = 12
@@ -2129,15 +2059,12 @@ class SearchBubble:
         self._cv.config(width=w, height=BS)
         self._cv.delete("all")
         acc = THEME["accent"]
-        border_glow = THEME["border_glow"]   # vermelho escuro do tema
-        # sombra suave embaixo
+        border_glow = THEME["border_glow"]
         self._cv.create_oval(3, 3, BS+1, BS+1, fill=THEME["shadow"], outline="")
-        # corpo da bolha
         self._cv.create_oval(0, 0, BS, BS, fill=acc, outline="")
         if t > 0.01:
             self._cv.create_rectangle(r, 0, w - r, BS, fill=acc, outline="")
             self._cv.create_oval(w - BS, 0, w, BS, fill=acc, outline="")
-            # contorno vermelho escuro quando expandida
             outline_w = 2
             self._cv.create_arc(0, 0, BS, BS, start=90, extent=180,
                                 style="arc", outline=border_glow, width=outline_w)
@@ -2219,9 +2146,6 @@ class SearchBubble:
         except Exception as _e: log.debug("silenced: %s", _e)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# LibraryWindow — janela principal
-# ══════════════════════════════════════════════════════════════════════════════
 class LibraryWindow(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -2236,7 +2160,7 @@ class LibraryWindow(tk.Tk):
         self._last_ncols   = 0
         self._col_filter   = "all"
         self._col_sort     = "name"
-        self._status_filter= "all"        # all|unread|reading|done
+        self._status_filter= "all"
         self._search_query = ""
         self._card_map     = {}
         self._cover_loader = None
@@ -2246,7 +2170,6 @@ class LibraryWindow(tk.Tk):
         load_icons()
         load_library_config()
         prefs = load_prefs()
-        # se já escolheu idioma antes, pula direto
         if prefs.get("lang"):
             self.after(10, self._start)
         else:
@@ -2260,7 +2183,6 @@ class LibraryWindow(tk.Tk):
         self._build_shell()
         self.after(200, self._refresh_library)
 
-    # ── Shell ──────────────────────────────────────────────────────────────────
     def _build_shell(self):
         for w in self.winfo_children():
             w.destroy()
@@ -2337,7 +2259,6 @@ class LibraryWindow(tk.Tk):
         cv.bind("<Button-1>", lambda e: cmd())
         return cv
 
-    # ── Biblioteca ─────────────────────────────────────────────────────────────
     def _refresh_library(self):
         c = THEME
         self._card_map.clear()
@@ -2360,7 +2281,6 @@ class LibraryWindow(tk.Tk):
             tk.Label(hdr, text=short, font=FTINY, bg=c["bg"], fg=c["text_muted"]).pack(side="left", padx=10, pady=(6,0))
         make_pill(hdr, "+  Pasta", self._choose_folder, variant="accent", font=FSMALL).pack(side="right")
 
-        # filtro de status
         stf = tk.Frame(self._main, bg=c["bg"]); stf.pack(fill="x", padx=20, pady=(0, 4))
         tk.Label(stf, text=f"{TEXTS[LANG]['filter_status']}:", font=FTINY,
                  bg=c["bg"], fg=c["text_dim"]).pack(side="left", padx=(0, 6))
@@ -2421,7 +2341,6 @@ class LibraryWindow(tk.Tk):
         self._populate_library_grid()
 
     def _status_of(self, path):
-        # status manual tem prioridade
         ms = get_manual_status(path)
         if ms in ("reading", "done"):
             return ms
@@ -2445,7 +2364,6 @@ class LibraryWindow(tk.Tk):
 
         arquivos = self._scan()
 
-        # ── Seção "Continuar Lendo" ──
         prog = load_progress()
         continuar = []
         for p in arquivos:
@@ -2482,7 +2400,6 @@ class LibraryWindow(tk.Tk):
         ncols = max(2, avail // card_w)
         self._last_ncols = ncols
 
-        # Continuar lendo (só sem busca/filtro)
         if continuar and not q and self._status_filter == "all":
             tk.Label(self._lib_content, text=f"▶  {TEXTS[LANG]['continue_section']}",
                      font=FBTN, bg=c["bg"], fg=c["text_dim"], anchor="w").pack(
@@ -2550,7 +2467,6 @@ class LibraryWindow(tk.Tk):
                        if f.lower().endswith(exts) and os.path.isfile(os.path.join(LIBRARY_FOLDER, f))],
                       key=natural_key)
 
-    # ── Abrir leitor (com SmartPageLoader + próxima edição) ───────────────────
     def _open(self, path, sibling_list=None):
         try:
             loader = SmartPageLoader(path)
@@ -2559,7 +2475,6 @@ class LibraryWindow(tk.Tk):
         if loader.count == 0:
             messagebox.showerror(TEXTS[LANG]["error"], "Sem imagens."); return
 
-        # determina lista de irmãos (próxima edição) pela série/pasta
         if sibling_list is None:
             sibling_list = self._siblings_of(path)
 
@@ -2583,12 +2498,10 @@ class LibraryWindow(tk.Tk):
     def _siblings_of(self, path):
         """Acha as outras edições da mesma série/pasta, ordenadas."""
         folder = os.path.dirname(path)
-        # mesma pasta
         same_dir = self._scan() if folder == LIBRARY_FOLDER else sorted([
             os.path.join(folder, f) for f in os.listdir(folder)
             if f.lower().endswith((".cbz",".cbr",".zip",".rar",".pdf"))
             and os.path.isfile(os.path.join(folder, f))], key=natural_key)
-        # se na raiz, tenta agrupar por série
         if folder == LIBRARY_FOLDER:
             key = _serie_name(os.path.basename(path))
             serie = sorted([p for p in same_dir
@@ -2630,7 +2543,6 @@ class LibraryWindow(tk.Tk):
             self._search_query = ""
             self._refresh_library()
 
-    # ── Coleções ───────────────────────────────────────────────────────────────
     def _show_collections(self):
         if self._search_bubble:
             try: self._search_bubble.destroy()
@@ -2803,7 +2715,6 @@ class LibraryWindow(tk.Tk):
         toggle_theme()
         save_prefs(dark=IS_DARK)
         self._capa_cache.clear()
-        # preserva o texto de busca atual
         if self._search_bubble:
             self._search_query = self._search_bubble.get_text()
             try: self._search_bubble.destroy()
@@ -2813,9 +2724,6 @@ class LibraryWindow(tk.Tk):
         self.after(200, self._refresh_library)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Retângulo arredondado
-# ══════════════════════════════════════════════════════════════════════════════
 def _rrect(cv, x1, y1, x2, y2, r, fill="", outline="", width=1):
     pts = [x1+r,y1, x2-r,y1, x2,y1, x2,y1+r, x2,y2-r, x2,y2,
            x2-r,y2, x1+r,y2, x1,y2, x1,y2-r, x1,y1+r, x1,y1, x1+r,y1]
