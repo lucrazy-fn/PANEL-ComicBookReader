@@ -8,11 +8,28 @@ Opcional (PDF): pip install pymupdf
 """
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 import zipfile
 import os, sys, io, json, time, threading, hashlib, re, shutil, logging
 from pathlib import Path
 from collections import deque
+
+from panel_app.storage import (
+    APPDATA_DIR as _APPDATA, BOOKMARKS_FILE, COVER_CACHE_DIR, FAVORITES_FILE,
+    LIBRARY_CONFIG_FILE, MANUAL_STATUS_FILE, PREFS_FILE, PROGRESS_FILE,
+    collection_progress, collection_read_count, export_backup, get_bookmarks,
+    get_manual_status, get_progress_page, import_backup, is_favorite,
+    json_load as _json_load, json_save as _json_save, load_bookmarks,
+    load_favorites, load_manual_status, load_prefs, load_progress, save_prefs,
+    save_progress, set_manual_status, toggle_bookmark, toggle_favorite,
+    register_change_listener,
+)
+from panel_app.account_views import render_notifications, render_profile
+from panel_app.sync import build_sync_payload, content_id
+from panel_app.reader import load_state as load_reader_state, save_state as save_reader_state
+from panel_app.downloads import manager as download_manager, render_downloads
+from panel_app.community import load_catalog, save_catalog
+from panel_app.moderation import can_moderate
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("panel")
@@ -25,7 +42,10 @@ except ImportError:
     HAS_RAR = False
 
 try:
-    import fitz
+    try:
+        import pymupdf as fitz
+    except ImportError:  # compatibilidade com versões antigas do PyMuPDF
+        import fitz
     HAS_PDF = True
 except ImportError:
     HAS_PDF = False
@@ -131,6 +151,10 @@ LIGHT = {
     "search_bg": "#f0ede8",
 }
 
+# Fonte canônica extraída; os aliases locais preservam a compatibilidade
+# durante a migração das telas restantes.
+from panel_app.themes import DARK as DARK, LIGHT as LIGHT, TEXTS as TEXTS
+
 IS_DARK = True
 THEME = DARK.copy()
 
@@ -144,18 +168,7 @@ def toggle_theme():
 def current_theme_label():
     return TEXTS[LANG]["light"] if IS_DARK else TEXTS[LANG]["dark"]
 
-_APPDATA = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Panel")
-os.makedirs(_APPDATA, exist_ok=True)
-
-LIBRARY_CONFIG_FILE = os.path.join(_APPDATA, "library_config.json")
 LIBRARY_FOLDER      = ""
-PROGRESS_FILE       = os.path.join(_APPDATA, "reading_progress.json")
-BOOKMARKS_FILE      = os.path.join(_APPDATA, "bookmarks.json")
-FAVORITES_FILE      = os.path.join(_APPDATA, "favorites.json")
-MANUAL_STATUS_FILE  = os.path.join(_APPDATA, "manual_status.json")
-PREFS_FILE          = os.path.join(_APPDATA, "prefs.json")
-COVER_CACHE_DIR     = os.path.join(_APPDATA, "cover_cache")
-os.makedirs(COVER_CACHE_DIR, exist_ok=True)
 
 ICON_PATH = Path(resource_path("Icons"))
 ICONS = {}
@@ -417,160 +430,16 @@ class SmartPageLoader:
         with self._lock:
             self._cache.clear()
 
+# Implementações canônicas extraídas do monólito. As definições antigas acima
+# serão removidas quando os consumidores restantes estiverem migrados.
+from panel_app.archive import (
+    ArchiveBackend as ArchiveBackend,
+    SmartPageLoader as SmartPageLoader,
+    extract_cover_only as extract_cover_only,
+    pil_from_bytes as pil_from_bytes,
+    rounded_image as rounded_image,
+)
 
-def _json_load(fpath, default):
-    try:
-        with open(fpath, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (IOError, json.JSONDecodeError, FileNotFoundError):
-        return default
-
-def _json_save(fpath, data):
-    try:
-        with open(fpath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-    except IOError as e:
-        print("save err:", e)
-
-
-_PROGRESS_CACHE: dict = {}
-_PROGRESS_DIRTY = False
-_PROGRESS_TIMER = None
-
-def load_progress():
-    global _PROGRESS_CACHE
-    if not _PROGRESS_CACHE:
-        _PROGRESS_CACHE = _json_load(PROGRESS_FILE, {})
-    return _PROGRESS_CACHE
-
-def _flush_progress():
-    global _PROGRESS_DIRTY, _PROGRESS_TIMER
-    _PROGRESS_TIMER = None
-    if _PROGRESS_DIRTY:
-        _json_save(PROGRESS_FILE, _PROGRESS_CACHE)
-        _PROGRESS_DIRTY = False
-
-def save_progress(path, page):
-    global _PROGRESS_DIRTY, _PROGRESS_TIMER
-    load_progress()
-    _PROGRESS_CACHE[path] = {"page": page, "ts": time.time()} if isinstance(page, int) else page
-    _PROGRESS_DIRTY = True
-    if _PROGRESS_TIMER is not None:
-        try:
-            import tkinter as _tk
-            _tk._default_root.after_cancel(_PROGRESS_TIMER)
-        except Exception:
-            pass
-    try:
-        import tkinter as _tk
-        if _tk._default_root:
-            _PROGRESS_TIMER = _tk._default_root.after(2000, _flush_progress)
-        else:
-            _flush_progress()
-    except Exception:
-        _flush_progress()
-
-def get_progress_page(path):
-    """Compat: aceita formato antigo (int) e novo (dict)."""
-    p = load_progress().get(path)
-    if p is None: return None
-    if isinstance(p, dict): return p.get("page")
-    return p
-
-
-def load_bookmarks():
-    return _json_load(BOOKMARKS_FILE, {})
-
-def toggle_bookmark(path, page):
-    bm = load_bookmarks()
-    lst = bm.get(path, [])
-    if page in lst:
-        lst.remove(page)
-    else:
-        lst.append(page)
-        lst.sort()
-    bm[path] = lst
-    _json_save(BOOKMARKS_FILE, bm)
-    return page in lst
-
-def get_bookmarks(path):
-    return load_bookmarks().get(path, [])
-
-
-def load_favorites():
-    return _json_load(FAVORITES_FILE, [])
-
-def toggle_favorite(path):
-    favs = load_favorites()
-    if path in favs:
-        favs.remove(path)
-        _json_save(FAVORITES_FILE, favs)
-        return False
-    else:
-        favs.append(path)
-        _json_save(FAVORITES_FILE, favs)
-        return True
-
-def is_favorite(path):
-    return path in load_favorites()
-
-
-def load_manual_status():
-    return _json_load(MANUAL_STATUS_FILE, {})
-
-def set_manual_status(path, status):
-    ms = load_manual_status()
-    if status is None:
-        ms.pop(path, None)
-    else:
-        ms[path] = status
-    _json_save(MANUAL_STATUS_FILE, ms)
-
-def get_manual_status(path):
-    return load_manual_status().get(path)
-
-
-def load_prefs():
-    return _json_load(PREFS_FILE, {})
-
-def save_prefs(**kwargs):
-    p = load_prefs()
-    p.update(kwargs)
-    _json_save(PREFS_FILE, p)
-
-
-def export_backup(dest_path: str):
-    data = {
-        "progress":      _json_load(PROGRESS_FILE, {}),
-        "bookmarks":     _json_load(BOOKMARKS_FILE, {}),
-        "favorites":     _json_load(FAVORITES_FILE, []),
-        "manual_status": _json_load(MANUAL_STATUS_FILE, {}),
-        "prefs":         _json_load(PREFS_FILE, {}),
-        "exported_at":   time.time(),
-    }
-    _json_save(dest_path, data)
-
-def import_backup(src_path: str):
-    data = _json_load(src_path, {})
-    if "progress" in data:
-        cur = _json_load(PROGRESS_FILE, {})
-        cur.update(data["progress"])
-        _json_save(PROGRESS_FILE, cur)
-        _PROGRESS_CACHE.clear()
-    if "bookmarks" in data:
-        cur = _json_load(BOOKMARKS_FILE, {})
-        cur.update(data["bookmarks"])
-        _json_save(BOOKMARKS_FILE, cur)
-    if "favorites" in data:
-        _json_save(FAVORITES_FILE, data["favorites"])
-    if "manual_status" in data:
-        cur = _json_load(MANUAL_STATUS_FILE, {})
-        cur.update(data["manual_status"])
-        _json_save(MANUAL_STATUS_FILE, cur)
-    if "prefs" in data:
-        cur = _json_load(PREFS_FILE, {})
-        cur.update(data["prefs"])
-        _json_save(PREFS_FILE, cur)
 
 def load_library_config():
     global LIBRARY_FOLDER, LANG, IS_DARK, THEME
@@ -589,24 +458,6 @@ def save_library_config(path):
     global LIBRARY_FOLDER
     LIBRARY_FOLDER = path
     _json_save(LIBRARY_CONFIG_FILE, {"library_folder": path})
-
-
-def collection_progress(files: list) -> tuple:
-    prog = load_progress()
-    lidas, ultima, ultima_ts = 0, None, -1
-    for fpath in files:
-        entry = prog.get(fpath)
-        if entry is not None:
-            page = entry.get("page") if isinstance(entry, dict) else entry
-            ts   = entry.get("ts", 0) if isinstance(entry, dict) else 0
-            if ts > ultima_ts:
-                ultima_ts = ts
-                ultima = fpath
-            lidas += 1
-    return lidas, len(files), ultima
-
-def collection_read_count(files: list) -> tuple:
-    return collection_progress(files)
 
 
 def _cover_cache_path(comic_path: str) -> str:
@@ -758,6 +609,907 @@ class CoverLoader:
         except Exception as e:
             print("Erro lazy capa:", e)
             return None
+
+
+try:
+    from panel_client import api_client, session_store
+    _ACCOUNTS_AVAILABLE = True
+except ImportError:
+    # panel_client não instalado (ex: dependência 'requests' ausente) ->
+    # o app continua 100% funcional no modo convidado, sem tela de conta.
+    _ACCOUNTS_AVAILABLE = False
+
+
+def _draw_field_icon(cv, kind, cx, cy, s, color):
+    """Ícone vetorial simples (sem depender de arquivo de imagem), no
+    mesmo espírito monocromático dos ícones da barra lateral."""
+    if kind == "user":
+        cv.create_oval(cx - s*0.26, cy - s*0.5, cx + s*0.26, cy - s*0.04,
+                        outline=color, width=1.6)
+        cv.create_arc(cx - s*0.5, cy - s*0.05, cx + s*0.5, cy + s*0.75,
+                       start=0, extent=180, style="arc", outline=color, width=1.6)
+    elif kind == "mail":
+        cv.create_rectangle(cx - s*0.5, cy - s*0.32, cx + s*0.5, cy + s*0.32,
+                             outline=color, width=1.6)
+        cv.create_line(cx - s*0.5, cy - s*0.3, cx, cy + s*0.08, cx + s*0.5, cy - s*0.3,
+                        fill=color, width=1.6)
+    elif kind == "lock":
+        cv.create_rectangle(cx - s*0.38, cy - s*0.02, cx + s*0.38, cy + s*0.48,
+                             outline=color, width=1.6)
+        cv.create_arc(cx - s*0.26, cy - s*0.5, cx + s*0.26, cy + s*0.02,
+                       start=0, extent=180, style="arc", outline=color, width=1.6)
+
+
+class AuthWindow(tk.Toplevel):
+    """
+    Tela inicial: entrar, criar conta, ou continuar como convidado.
+    Um cartão único com abas (Entrar/Cadastrar) trocando o conteúdo do
+    formulário; "continuar como convidado" fica fora do cartão, sempre
+    visível. Ao terminar, chama self.cb(user) e se destrói — user=None
+    significa convidado, igual antes.
+    """
+    W, H = 400, 660
+    CARD_W = 320
+
+    def __init__(self, master, cb):
+        super().__init__(master)
+        try: self.iconbitmap(resource_path("panel.ico"))
+        except Exception as _e: log.debug("silenced: %s", _e)
+        self.cb = cb
+        self.title("PANEL")
+        self.configure(bg=THEME["bg"])
+        self.resizable(True, True)
+        self.minsize(self.W, self.H)
+        self.grab_set()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.geometry(f"{self.W}x{self.H}+{(sw-self.W)//2}+{(sh-self.H)//2}")
+
+        self._mode = "login"          # "login" | "register"
+        self._status_text = ""
+        self._status_error = False
+        self._entries = {}            # nome -> (entry, placeholder)
+        self._fullscreen = False
+        self._auth_in_progress = False
+        self._last_size = None
+        self._resize_job = None
+
+        self.bind("<F11>", self._toggle_fullscreen)
+        self.bind("<Escape>", self._exit_fullscreen)
+        self.bind("<Configure>", self._on_configure)
+
+        self._build()
+
+    # ---------- janela ----------
+
+    def _current_size(self):
+        w, h = self.winfo_width(), self.winfo_height()
+        if w <= 1 or h <= 1:
+            return self.W, self.H
+        return w, h
+
+    def _on_configure(self, event):
+        if event.widget is not self:
+            return
+        size = (event.width, event.height)
+        if size == self._last_size:
+            return
+        self._last_size = size
+        if self._resize_job:
+            self.after_cancel(self._resize_job)
+        # debounce: só reconstrói quando o redimensionamento se estabiliza,
+        # pra não recalcular a cada pixel arrastado
+        self._resize_job = self.after(120, self._build)
+
+    def _toggle_fullscreen(self, event=None):
+        self._fullscreen = not self._fullscreen
+        self.attributes("-fullscreen", self._fullscreen)
+
+    def _exit_fullscreen(self, event=None):
+        if self._fullscreen:
+            self._fullscreen = False
+            self.attributes("-fullscreen", False)
+
+    # ---------- construção ----------
+
+    def _scale_factor(self, W, H):
+        """
+        Fator de escala do cartão em relação ao tamanho base (400x660).
+        Usa o menor dos dois eixos pra o cartão nunca estourar a janela
+        em nenhuma direção (mesmo com proporção bem larga ou bem alta),
+        e nunca fica menor que 1x nem passa de 1.6x (senão fica gigante
+        e vazio numa tela ultrawide).
+        """
+        factor = min(W / self.W, H / self.H)
+        return max(1.0, min(factor, 1.6))
+
+    @staticmethod
+    def _sf(font, scale):
+        family, size, *rest = font
+        return (family, max(1, round(size * scale)), *rest)
+
+    def _build(self):
+        self._resize_job = None
+        saved_values = self._capture_values()
+        for w in self.winfo_children():
+            w.destroy()
+        c = THEME
+        W, H = self._current_size()
+        scale = self._scale_factor(W, H)
+
+        f_logo  = self._sf(FLOGO, scale)
+        f_btn   = self._sf(FBTN, scale)
+        f_label = self._sf(FLABEL, scale)
+        f_tiny  = self._sf(FTINY, scale)
+        f_entry = self._sf(FSMALL, scale)
+
+        card_w = round(self.CARD_W * scale)
+        card_x = (W - card_w) // 2
+        card_y = round(92 * scale)
+
+        # ---- fase 1: calcular posições (sem desenhar), tudo em função de scale ----
+        tab_pad = round(16 * scale)
+        tab_h = round(38 * scale)
+        tab_y0, tab_y1 = card_y + round(16 * scale), card_y + round(54 * scale)
+        ax, ay, ar = W // 2, tab_y1 + round(44 * scale), round(30 * scale)
+        field_y = ay + ar + round(24 * scale)
+        field_h = round(42 * scale)
+        field_spacing = round(12 * scale)
+        # Cadastro e login possuem três campos. O login ganhou o código
+        # 2FA opcional; manter "2" aqui fazia o botão ser desenhado por
+        # cima do terceiro campo.
+        n_fields = 3
+        field_y_end = field_y + n_fields * field_h + (n_fields - 1) * field_spacing
+        status_y = field_y_end + round(20 * scale)
+        btn_y = status_y + round(32 * scale)
+        switch_y = btn_y + round(30 * scale)
+        card_h = (switch_y + round(20 * scale)) - card_y
+        guest_y = card_y + card_h + round(34 * scale)
+
+        cv = tk.Canvas(self, width=W, height=H, bg=c["bg"], highlightthickness=0)
+        cv.pack(fill="both", expand=True)
+        self._cv = cv
+
+        # ---- fase 2: desenhar ----
+        cv.create_text(W//2, round(40*scale), text="◈ PANEL", font=f_logo, fill=c["text"])
+        cv.create_text(W//2, round(64*scale), text="Sua biblioteca de quadrinhos", font=f_tiny, fill=c["text_dim"])
+        cv.create_text(W - 14, H - 14, text="F11 tela cheia", font=FTINY, fill=c["text_dim"], anchor="se")
+
+        card_radius = round(22 * scale)
+        _rrect(cv, card_x+4, card_y+6, card_x+card_w+4, card_y+card_h+6, card_radius, fill=c["shadow_light"])
+        _rrect(cv, card_x, card_y, card_x+card_w, card_y+card_h, card_radius, fill=c["surface"])
+
+        # ---- abas segmentadas (Entrar / Cadastrar) ----
+        tab_x0, tab_x1 = card_x + tab_pad, card_x + card_w - tab_pad
+        _rrect(cv, tab_x0, tab_y0, tab_x1, tab_y1, (tab_y1-tab_y0)//2, fill=c["surface_alt"])
+        half_w = (tab_x1 - tab_x0) / 2
+        active_x0 = tab_x0 if self._mode == "login" else tab_x0 + half_w
+        _rrect(cv, active_x0 + 2, tab_y0 + 2, active_x0 + half_w - 2, tab_y1 - 2,
+               (tab_y1-tab_y0)//2 - 2, fill=c["accent"])
+
+        login_tag = cv.create_rectangle(tab_x0, tab_y0, tab_x0+half_w, tab_y1, outline="", fill="")
+        register_tag = cv.create_rectangle(tab_x0+half_w, tab_y0, tab_x1, tab_y1, outline="", fill="")
+        cv.create_text(tab_x0 + half_w/2, (tab_y0+tab_y1)/2, text="Entrar", font=f_btn,
+                        fill="#ffffff" if self._mode == "login" else c["text_dim"])
+        cv.create_text(tab_x0 + half_w*1.5, (tab_y0+tab_y1)/2, text="Cadastrar", font=f_btn,
+                        fill="#ffffff" if self._mode == "register" else c["text_dim"])
+        cv.tag_bind(login_tag, "<Button-1>", lambda e: self._switch_mode("login"))
+        cv.tag_bind(register_tag, "<Button-1>", lambda e: self._switch_mode("register"))
+
+        # ---- avatar ----
+        cv.create_oval(ax-ar, ay-ar, ax+ar, ay+ar, fill=c["surface_alt"], outline=c["border"])
+        _draw_field_icon(cv, "user", ax, ay+3, ar*1.3, c["text_dim"])
+
+        # ---- campos ----
+        field_pad = round(24 * scale)
+        field_x0 = card_x + field_pad
+        field_w = card_w - field_pad * 2
+        y = field_y
+        self._entries.clear()
+        if self._mode == "register":
+            y = self._add_field(cv, "username", "user", "Usuário", field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "email", "mail", "E-mail (opcional)", field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "password", "lock", "Senha (mín. 8 caracteres)", field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry)
+        else:
+            y = self._add_field(cv, "username", "user", "Usuário", field_x0, y, field_w, field_h, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "password", "lock", "Senha", field_x0, y, field_w, field_h, secret=True, scale=scale, font=f_entry) + field_spacing
+            y = self._add_field(cv, "totp", "lock", "Código 2FA (se ativado)", field_x0, y, field_w, field_h, scale=scale, font=f_entry)
+        self._restore_values(saved_values)
+
+        # ---- status (erro/info) ----
+        self._status_item = cv.create_text(
+            W//2, status_y, text=self._status_text, font=f_tiny,
+            fill=(c["accent2"] if self._status_error else c["text_dim"]),
+            width=card_w - round(40*scale), justify="center",
+        )
+
+        # ---- botão principal ----
+        btn_label = "Entrar" if self._mode == "login" else "Criar conta"
+        btn = make_pill(cv, btn_label,
+                         self._do_login if self._mode == "login" else self._do_register,
+                         variant="accent", font=f_btn,
+                         pad_x=round(20*scale), pad_y=round(9*scale), min_w=field_w)
+        cv.create_window(W//2, btn_y, window=btn)
+
+        # ---- link de troca de modo ----
+        if self._mode == "login":
+            cv.create_text(W//2, switch_y, text="Não tem conta?  Cadastre-se",
+                            font=f_tiny, fill=c["text_dim"])
+        else:
+            cv.create_text(W//2, switch_y, text="Já tem conta?  Entrar",
+                            font=f_tiny, fill=c["text_dim"])
+        link_tag = cv.create_rectangle(card_x, switch_y-10, card_x+card_w, switch_y+10, outline="", fill="")
+        cv.tag_bind(link_tag, "<Button-1>",
+                    lambda e: self._switch_mode("register" if self._mode == "login" else "login"))
+
+        # ---- convidado, fora do cartão ----
+        guest = cv.create_text(W//2, guest_y, text="Continuar como convidado",
+                                font=f_label, fill=c["text_dim"])
+        cv.tag_bind(guest, "<Button-1>", lambda e: self._continue_guest())
+        cv.tag_bind(guest, "<Enter>", lambda e: cv.itemconfig(guest, fill=c["text"]))
+        cv.tag_bind(guest, "<Leave>", lambda e: cv.itemconfig(guest, fill=c["text_dim"]))
+        for tag in (guest, login_tag, register_tag, link_tag):
+            cv.tag_bind(tag, "<Enter>", lambda e, t=tag: cv.config(cursor="hand2"))
+            cv.tag_bind(tag, "<Leave>", lambda e: cv.config(cursor=""))
+
+        if not _ACCOUNTS_AVAILABLE:
+            self._set_status("Contas indisponíveis no momento — use o modo convidado.", error=True)
+
+    def _capture_values(self):
+        """Preserva o que o usuário já digitou ao reconstruir a tela
+        (redimensionar janela, maximizar, entrar/sair de tela cheia)."""
+        saved = {}
+        for name, (entry, ph) in getattr(self, "_entries", {}).items():
+            try:
+                val = entry.get()
+            except tk.TclError:
+                continue
+            if val != ph:
+                saved[name] = val
+        return saved
+
+    def _restore_values(self, saved):
+        for name, val in saved.items():
+            if name not in self._entries or not val:
+                continue
+            entry, _ph = self._entries[name]
+            entry.delete(0, "end")
+            entry.insert(0, val)
+            entry.config(fg=THEME["text"])
+            if name == "password":
+                entry.config(show="•")
+
+    def _add_field(self, cv, name, icon_kind, placeholder, x, y, w, h, secret=False, scale=1.0, font=None):
+        c = THEME
+        font = font or FSMALL
+        icon_off = round(22 * scale)
+        icon_size = round(18 * scale)
+        entry_x = round(40 * scale)
+        radius = round(12 * scale)
+
+        _rrect(cv, x, y, x+w, y+h, radius, fill=c["surface_alt"])
+        _draw_field_icon(cv, icon_kind, x + icon_off, y + h/2, icon_size, c["text_dim"])
+
+        entry = tk.Entry(cv, font=font, bd=0, highlightthickness=0,
+                          bg=c["surface_alt"], fg=c["text_dim"],
+                          insertbackground=c["text"])
+        entry.insert(0, placeholder)
+        entry_w = w - entry_x - round(6 * scale)
+        cv.create_window(x + entry_x, y + h/2, window=entry, anchor="w",
+                          width=entry_w, height=max(1, h - round(14 * scale)))
+
+        def on_focus_in(_e, ent=entry, ph=placeholder, sec=secret):
+            if ent.get() == ph:
+                ent.delete(0, "end")
+                ent.config(fg=c["text"])
+                if sec:
+                    ent.config(show="•")
+
+        def on_focus_out(_e, ent=entry, ph=placeholder):
+            if not ent.get():
+                ent.config(fg=c["text_dim"], show="")
+                ent.insert(0, ph)
+
+        entry.bind("<FocusIn>", on_focus_in)
+        entry.bind("<FocusOut>", on_focus_out)
+        self._entries[name] = (entry, placeholder)
+        return y + h
+
+    def _field_value(self, name):
+        entry, placeholder = self._entries[name]
+        v = entry.get()
+        return "" if v == placeholder else v.strip() if name != "password" else v
+
+    def _set_status(self, text, error=False):
+        self._status_text, self._status_error = text, error
+        if hasattr(self, "_cv") and self._status_item:
+            self._cv.itemconfig(self._status_item, text=text,
+                                 fill=(THEME["accent2"] if error else THEME["text_dim"]))
+
+    # ---------- interação ----------
+
+    def _switch_mode(self, mode):
+        if mode == self._mode:
+            return
+        self._mode = mode
+        self._status_text = ""
+        self._build()
+
+    def _do_login(self):
+        if not _ACCOUNTS_AVAILABLE:
+            self._set_status("Contas indisponíveis no momento.", error=True)
+            return
+        self._authenticate(api_client.login)
+
+    def _do_register(self):
+        if not _ACCOUNTS_AVAILABLE:
+            self._set_status("Contas indisponíveis no momento.", error=True)
+            return
+        self._authenticate(api_client.register, with_email=True)
+
+    def _authenticate(self, api_fn, with_email=False):
+        if self._auth_in_progress:
+            return
+        username = self._field_value("username")
+        password = self._field_value("password")
+        if not username or not password:
+            self._set_status("Preencha usuário e senha.", error=True)
+            return
+        email = (self._field_value("email") or None) if with_email else None
+        self._auth_in_progress = True
+        self._set_status("Conectando…")
+
+        def worker():
+            try:
+                auth = api_fn(username, password, email) if with_email else api_fn(username, password,self._field_value("totp") or None)
+                result = (auth, None)
+            except api_client.ApiAuthError as exc:
+                result = (None, str(exc))
+            except api_client.ApiUnavailableError:
+                result = (None, "Sem conexão com o servidor. Tente o modo convidado.")
+            except api_client.ApiServerError as exc:
+                result = (None, str(exc))
+            except Exception:
+                log.exception("Falha inesperada durante autenticação")
+                result = (None, "Não foi possível entrar agora.")
+            try:
+                self.after(0, lambda: self._finish_auth(*result))
+            except tk.TclError:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_auth(self, auth, error):
+        self._auth_in_progress = False
+        if error:
+            self._set_status(error, error=True)
+            return
+        session_store.save_session(session_store.LocalSession(
+            token=auth.token, user_id=auth.user_id,
+            username=auth.username, display_name=auth.display_name,
+            is_moderator=getattr(auth, "is_moderator", False),
+            role=getattr(auth, "role", "user"),
+        ))
+        self.destroy()
+        self.cb(auth)
+
+    def _continue_guest(self):
+        self.destroy()
+        self.cb(None)
+
+
+class PublishDialog(tk.Toplevel):
+    """
+    Formulário pra enviar um quadrinho da biblioteca local pra moderação
+    e, se aprovado, pra comunidade. Só os METADADOS são enviados agora —
+    o arquivo em si continua no computador do usuário (upload de arquivo
+    de verdade é um passo futuro separado, de armazenamento).
+    """
+    W, H = 440, 650
+
+    def __init__(self, master, path, user):
+        super().__init__(master)
+        try: self.iconbitmap(resource_path("panel.ico"))
+        except Exception as _e: log.debug("silenced: %s", _e)
+        self._path = path
+        self._user = user
+        self._submit_in_progress = False
+        self.title("Publicar na comunidade")
+        self.configure(bg=THEME["bg"])
+        self.resizable(False, False)
+        self.grab_set()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.geometry(f"{self.W}x{self.H}+{(sw-self.W)//2}+{(sh-self.H)//2}")
+
+        c = THEME
+        pad = dict(padx=28)
+
+        tk.Label(self, text="Publicar na comunidade", font=FTITLE,
+                 bg=c["bg"], fg=c["text"]).pack(pady=(22, 2), **pad)
+        tk.Label(self, text=os.path.basename(path), font=FTINY,
+                 bg=c["bg"], fg=c["text_dim"]).pack(pady=(0, 14), **pad)
+
+        def field(label_text):
+            tk.Label(self, text=label_text, font=FTINY, bg=c["bg"], fg=c["text_dim"],
+                      anchor="w").pack(fill="x", pady=(8, 2), **pad)
+            e = tk.Entry(self, font=FSMALL, bg=c["surface_alt"], fg=c["text"],
+                         bd=0, highlightthickness=1, highlightbackground=c["border"],
+                         highlightcolor=c["accent"], insertbackground=c["text"])
+            e.pack(fill="x", ipady=6, **pad)
+            return e
+
+        self._title_e = field("Título")
+        self._title_e.insert(0, Path(path).stem)
+        self._author_e = field("Autor")
+        self._series_e = field("Série (opcional)")
+        self._chapter_e = field("Número do capítulo (opcional)")
+        self._tags_e = field("Tags (separadas por vírgula)")
+        self._license_e = field("Licença (opcional — ex: CC-BY-4.0, Domínio Público)")
+
+        tk.Label(self, text="Descrição", font=FTINY, bg=c["bg"], fg=c["text_dim"],
+                  anchor="w").pack(fill="x", pady=(8, 2), **pad)
+        self._desc_txt = tk.Text(self, font=FSMALL, bg=c["surface_alt"], fg=c["text"],
+                                   bd=0, highlightthickness=1, highlightbackground=c["border"],
+                                   highlightcolor=c["accent"], insertbackground=c["text"],
+                                   height=3, wrap="word")
+        self._desc_txt.pack(fill="x", **pad)
+
+        self._authorship_var = tk.BooleanVar(value=False)
+        self._authorization_var = tk.BooleanVar(value=False)
+        chk_kwargs = dict(bg=c["bg"], fg=c["text"], selectcolor=c["surface_alt"],
+                           activebackground=c["bg"], activeforeground=c["text"],
+                           font=FTINY, anchor="w", relief="flat", bd=0,
+                           highlightthickness=0)
+        tk.Checkbutton(self, text="Sou o autor original desta obra",
+                        variable=self._authorship_var, **chk_kwargs).pack(fill="x", pady=(12, 0), **pad)
+        tk.Checkbutton(self, text="Tenho autorização do autor para publicar",
+                        variable=self._authorization_var, **chk_kwargs).pack(fill="x", **pad)
+
+        self._status = tk.Label(self, text="", font=FTINY, bg=c["bg"], fg=c["text_dim"],
+                                  wraplength=self.W-56, justify="center")
+        self._status.pack(pady=(10, 0), **pad)
+
+        btn_row = tk.Frame(self, bg=c["bg"])
+        btn_row.pack(pady=16, **pad, fill="x")
+        make_pill(btn_row, "Cancelar", self.destroy,
+                  variant="ghost", font=FBTN, pad_x=18, pad_y=9).pack(side="left")
+        make_pill(btn_row, "Enviar para moderação", self._submit,
+                  variant="accent", font=FBTN, pad_x=18, pad_y=9).pack(side="right")
+
+    def _submit(self):
+        if self._submit_in_progress:
+            return
+        title = self._title_e.get().strip()
+        author = self._author_e.get().strip()
+        if not title or not author:
+            self._status.config(text="Preencha ao menos título e autor.", fg=THEME["accent2"])
+            return
+        if not self._authorship_var.get() and not self._authorization_var.get():
+            self._status.config(
+                text="Marque que você é o autor ou tem autorização — publicações "
+                     "sem isso têm risco maior de ficar em revisão.",
+                fg=THEME["accent2"])
+            return
+
+        tags = [t.strip() for t in self._tags_e.get().split(",") if t.strip()]
+        description = self._desc_txt.get("1.0", "end").strip()
+        license_ = self._license_e.get().strip() or None
+        series_title = self._series_e.get().strip() or None
+        try: chapter_number = int(self._chapter_e.get()) if self._chapter_e.get().strip() else None
+        except ValueError:
+            self._status.config(text="O número do capítulo precisa ser inteiro.",fg=THEME["accent2"]); return
+        authorship_declared = self._authorship_var.get()
+        authorization_declared = self._authorization_var.get()
+
+        self._submit_in_progress = True
+        self._status.config(text="Enviando para moderação…", fg=THEME["text_dim"])
+
+        def worker():
+            try:
+                response = api_client.submit_publication(
+                    self._user.token, title=title, author=author, description=description,
+                    tags=tags, file_reference=self._path,
+                    authorship_declared=authorship_declared,
+                    authorization_declared=authorization_declared, license=license_,
+                    series_title=series_title, chapter_number=chapter_number,
+                )
+                api_client.upload_publication_file(
+                    self._user.token, response.publication_id, self._path
+                )
+                outcome = (response, None)
+            except api_client.ApiAuthError as exc:
+                outcome = (None, str(exc))
+            except api_client.ApiUnavailableError:
+                outcome = (None, "Sem conexão com o servidor. Tente novamente mais tarde.")
+            except api_client.ApiServerError as exc:
+                outcome = (None, str(exc))
+            except Exception:
+                log.exception("Falha inesperada durante publicação")
+                outcome = (None, "Não foi possível enviar a publicação agora.")
+            try:
+                self.after(0, lambda: self._finish_submit(*outcome))
+            except tk.TclError:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_submit(self, result, error):
+        self._submit_in_progress = False
+        if error:
+            self._status.config(text=error, fg=THEME["accent2"])
+            return
+        messagebox.showinfo("Publicação enviada", result.public_message)
+        self.destroy()
+
+
+class CommunityWindow(tk.Toplevel):
+    """Catálogo público ou histórico de envios da conta."""
+
+    STATUS_LABELS = {
+        "approved": "Aprovada",
+        "pending_review": "Em análise",
+        "rejected": "Rejeitada",
+    }
+
+    def __init__(self, master, user=None, mine=False):
+        super().__init__(master)
+        self._user = user
+        self._mine = mine
+        self._items = []
+        self._cover_tk = None
+        title = "Meus envios" if mine else "Descobrir"
+        self.title(f"PANEL — {title}")
+        self.geometry("860x540")
+        self.minsize(700, 440)
+        self.configure(bg=THEME["bg"])
+        try: self.iconbitmap(resource_path("panel.ico"))
+        except Exception as _e: log.debug("silenced: %s", _e)
+
+        header = tk.Frame(self, bg=THEME["bg"])
+        header.pack(fill="x", padx=20, pady=(18, 10))
+        tk.Label(header, text=title, font=FTITLE, bg=THEME["bg"],
+                 fg=THEME["text"]).pack(side="left")
+        make_pill(header, "Atualizar", self._refresh, variant="ghost",
+                  font=FBTN, pad_x=14, pad_y=7).pack(side="right")
+
+        body = tk.Frame(self, bg=THEME["bg"])
+        body.pack(fill="both", expand=True, padx=20)
+        self._list = tk.Listbox(
+            body, width=38, bg=THEME["surface"], fg=THEME["text"],
+            selectbackground=THEME["accent"], selectforeground="#ffffff",
+            bd=0, highlightthickness=1, highlightbackground=THEME["border"],
+            font=FSMALL,
+        )
+        self._list.pack(side="left", fill="both")
+        self._list.bind("<<ListboxSelect>>", self._show_selected)
+        right = tk.Frame(body, bg=THEME["surface"])
+        right.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        self._cover = tk.Label(
+            right, text="Selecione uma obra", bg=THEME["surface_alt"],
+            fg=THEME["text_dim"], font=FTINY, width=22, height=12,
+        )
+        self._cover.pack(side="left", padx=14, pady=14)
+        detail_side = tk.Frame(right, bg=THEME["surface"])
+        detail_side.pack(side="left", fill="both", expand=True)
+        self._detail = tk.Text(
+            detail_side, bg=THEME["surface"], fg=THEME["text"], font=FSMALL,
+            wrap="word", bd=0, padx=18, pady=15, state="disabled",
+        )
+        self._detail.pack(fill="both", expand=True)
+        actions = tk.Frame(detail_side, bg=THEME["surface"])
+        actions.pack(fill="x", padx=12, pady=12)
+        make_pill(actions, "Ler", self._read_selected, variant="accent",
+                  font=FBTN, pad_x=16, pad_y=8).pack(side="left")
+        make_pill(actions, "Baixar", self._download_selected, variant="ghost",
+                  font=FBTN, pad_x=16, pad_y=8).pack(side="left", padx=8)
+        if self._user is not None and not self._mine:
+            make_pill(actions, "Denunciar", self._report_selected, variant="ghost",
+                      font=FBTN, pad_x=16, pad_y=8).pack(side="left")
+        self._status = tk.Label(self, text="", font=FTINY, bg=THEME["bg"],
+                                fg=THEME["text_dim"])
+        self._status.pack(fill="x", padx=20, pady=14)
+        self._refresh()
+
+    def _refresh(self):
+        self._status.config(text="Carregando…", fg=THEME["text_dim"])
+
+        def worker():
+            try:
+                items = (api_client.my_publications(self._user.token)
+                         if self._mine else api_client.discovery())
+                outcome = (items, None)
+            except (api_client.ApiAuthError, api_client.ApiServerError) as exc:
+                outcome = (None, str(exc))
+            except api_client.ApiUnavailableError:
+                cached, saved_at = load_catalog()
+                outcome = (cached, None) if cached and not self._mine else (None, "Servidor indisponível.")
+            except Exception:
+                log.exception("Falha ao carregar comunidade")
+                outcome = (None, "Não foi possível carregar os dados.")
+            try: self.after(0, lambda: self._loaded(*outcome))
+            except tk.TclError: pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _loaded(self, items, error):
+        if error:
+            self._status.config(text=error, fg=THEME["accent2"])
+            return
+        self._items = items
+        if not self._mine:
+            save_catalog(items)
+        self._list.delete(0, "end")
+        for item in items:
+            suffix = (f" — {self.STATUS_LABELS.get(item['status'], item['status'])}"
+                      if self._mine else f" — {item['author']}")
+            self._list.insert("end", item["title"] + suffix)
+        noun = "envio(s)" if self._mine else "obra(s)"
+        self._status.config(text=f"{len(items)} {noun}", fg=THEME["text_dim"])
+        if items:
+            self._list.selection_set(0)
+            self._show_selected()
+        else:
+            self._set_detail("Nenhum item encontrado.")
+
+    def _show_selected(self, _event=None):
+        selected = self._list.curselection()
+        if not selected:
+            return
+        item = self._items[selected[0]]
+        lines = [
+            f"Título: {item['title']}",
+            f"Autor: {item['author']}",
+            f"Tags: {', '.join(item.get('tags', [])) or 'Nenhuma'}",
+        ]
+        if item.get("series_title"):
+            lines.insert(1,f"Série: {item['series_title']} · Capítulo {item.get('chapter_number') or '?'}")
+        if self._mine:
+            lines.extend([
+                f"Status: {self.STATUS_LABELS.get(item['status'], item['status'])}",
+                f"Risco da triagem: {item['risk_level']}",
+            ])
+            if item.get("decision_reason"):
+                lines.append(f"Motivo da decisão: {item['decision_reason']}")
+        lines.extend(["", item.get("description") or "Sem descrição."])
+        if not item.get("has_file"):
+            lines.extend(["", "O arquivo desta publicação ainda não foi enviado."])
+        self._set_detail("\n".join(lines))
+        self._load_cover(item)
+
+    def _selected_item(self):
+        selected = self._list.curselection()
+        return self._items[selected[0]] if selected else None
+
+    def _token(self):
+        return self._user.token if self._user else None
+
+    def _report_selected(self):
+        item=self._selected_item()
+        if not item:return
+        reason=simpledialog.askstring("Denunciar obra","Motivo (copyright, illegal, harassment, spam ou other):",parent=self)
+        if not reason:return
+        reason=reason.strip().lower()
+        if reason not in {"copyright","illegal","harassment","spam","other"}:
+            messagebox.showerror("Denúncia","Motivo inválido.",parent=self);return
+        description=simpledialog.askstring("Denunciar obra","Descreva o problema:",parent=self) or ""
+        def worker():
+            try: api_client.create_report(self._user.token,"publication",item["publication_id"],reason,description); error=None
+            except Exception as exc:error=str(exc)
+            self.after(0,lambda:messagebox.showerror("Denúncia",error,parent=self) if error else messagebox.showinfo("Denúncia","Denúncia enviada para a moderação.",parent=self))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _load_cover(self, item):
+        self._cover.config(image="", text="Carregando capa…")
+        self._cover_tk = None
+        if not item.get("has_file"):
+            self._cover.config(text="Sem arquivo")
+            return
+        publication_id = item["publication_id"]
+        token = self._token()
+
+        def worker():
+            try:
+                data = api_client.publication_cover(publication_id, token)
+                image = Image.open(io.BytesIO(data)).convert("RGB")
+                image.thumbnail((220, 320), Image.LANCZOS)
+                outcome = (image, None)
+            except Exception as exc:
+                outcome = (None, str(exc))
+            try: self.after(0, lambda: self._cover_loaded(*outcome))
+            except tk.TclError: pass
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _cover_loaded(self, image, error):
+        if error:
+            self._cover.config(text="Capa indisponível")
+            return
+        self._cover_tk = ImageTk.PhotoImage(image)
+        self._cover.config(image=self._cover_tk, text="", width=image.width, height=image.height)
+
+    def _read_selected(self):
+        item = self._selected_item()
+        if not item or not item.get("has_file"):
+            messagebox.showinfo("Comunidade", "Esta publicação ainda não possui arquivo.", parent=self)
+            return
+        folder = os.path.join(_APPDATA, "community_cache")
+        os.makedirs(folder, exist_ok=True)
+        extension = Path(item.get("original_filename") or ".cbz").suffix or ".cbz"
+        destination = os.path.join(folder, item["publication_id"] + extension)
+        self._download_item(item, destination, open_after=True)
+
+    def _download_selected(self):
+        item = self._selected_item()
+        if not item or not item.get("has_file"):
+            messagebox.showinfo("Comunidade", "Esta publicação ainda não possui arquivo.", parent=self)
+            return
+        destination = filedialog.asksaveasfilename(
+            parent=self, initialfile=item.get("original_filename") or "quadrinho.cbz"
+        )
+        if destination:
+            self._download_item(item, destination, open_after=False)
+
+    def _download_item(self, item, destination, open_after):
+        self._status.config(text="Baixando arquivo…", fg=THEME["text_dim"])
+        token = self._token()
+        url = f"{api_client.BASE_URL}/publications/{item['publication_id']}/content"
+        def done(task):
+            error = task.error or ("Download cancelado." if task.status == "cancelled" else None)
+            try: self.after(0, lambda: self._download_finished(destination, open_after, error))
+            except tk.TclError: pass
+        download_manager.add(item.get("title") or "Quadrinho", url, destination, token, done)
+
+    def _download_finished(self, destination, open_after, error):
+        if error:
+            self._status.config(text=error, fg=THEME["accent2"])
+            return
+        self._status.config(text="Download concluído.", fg=THEME["text_dim"])
+        if open_after:
+            try:
+                loader = SmartPageLoader(destination)
+                ReaderWindow(self, destination, loader)
+            except Exception as exc:
+                messagebox.showerror("Leitura", f"Não foi possível abrir: {exc}", parent=self)
+
+    def _set_detail(self, text):
+        self._detail.config(state="normal")
+        self._detail.delete("1.0", "end")
+        self._detail.insert("1.0", text)
+        self._detail.config(state="disabled")
+
+
+class ModerationWindow(tk.Toplevel):
+    """Fila administrativa de publicações que aguardam revisão humana."""
+
+    def __init__(self, master, user):
+        super().__init__(master)
+        self._user = user
+        self._items = []
+        self.title("PANEL — Moderação")
+        self.geometry("900x560")
+        self.minsize(720, 460)
+        self.configure(bg=THEME["bg"])
+        try: self.iconbitmap(resource_path("panel.ico"))
+        except Exception as _e: log.debug("silenced: %s", _e)
+
+        header = tk.Frame(self, bg=THEME["bg"])
+        header.pack(fill="x", padx=20, pady=(18, 10))
+        tk.Label(header, text="Pedidos de publicação", font=FTITLE,
+                 bg=THEME["bg"], fg=THEME["text"]).pack(side="left")
+        make_pill(header, "Atualizar", self._refresh, variant="ghost",
+                  font=FBTN, pad_x=14, pad_y=7).pack(side="right")
+
+        body = tk.Frame(self, bg=THEME["bg"])
+        body.pack(fill="both", expand=True, padx=20)
+        self._list = tk.Listbox(
+            body, width=38, bg=THEME["surface"], fg=THEME["text"],
+            selectbackground=THEME["accent"], selectforeground="#ffffff",
+            bd=0, highlightthickness=1, highlightbackground=THEME["border"],
+            font=FSMALL,
+        )
+        self._list.pack(side="left", fill="both", expand=False)
+        self._list.bind("<<ListboxSelect>>", self._show_selected)
+
+        right = tk.Frame(body, bg=THEME["surface"])
+        right.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        self._detail = tk.Text(
+            right, bg=THEME["surface"], fg=THEME["text"], font=FSMALL,
+            wrap="word", bd=0, padx=16, pady=14, state="disabled",
+        )
+        self._detail.pack(fill="both", expand=True)
+
+        actions = tk.Frame(self, bg=THEME["bg"])
+        actions.pack(fill="x", padx=20, pady=14)
+        self._status = tk.Label(actions, text="", font=FTINY,
+                                bg=THEME["bg"], fg=THEME["text_dim"])
+        self._status.pack(side="left")
+        make_pill(actions, "Rejeitar", lambda: self._decide("rejected"),
+                  variant="ghost", font=FBTN, pad_x=16, pad_y=8).pack(side="right")
+        make_pill(actions, "Aprovar", lambda: self._decide("approved"),
+                  variant="accent", font=FBTN, pad_x=16, pad_y=8).pack(side="right", padx=8)
+        self._refresh()
+
+    def _run(self, operation, callback):
+        self._status.config(text="Carregando…", fg=THEME["text_dim"])
+
+        def worker():
+            try:
+                outcome = (operation(), None)
+            except (api_client.ApiAuthError, api_client.ApiServerError) as exc:
+                outcome = (None, str(exc))
+            except api_client.ApiUnavailableError:
+                outcome = (None, "Servidor indisponível.")
+            except Exception:
+                log.exception("Falha na tela de moderação")
+                outcome = (None, "Não foi possível concluir a operação.")
+            try: self.after(0, lambda: callback(*outcome))
+            except tk.TclError: pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _refresh(self):
+        self._run(lambda: api_client.moderation_queue(self._user.token), self._loaded)
+
+    def _loaded(self, items, error):
+        if error:
+            self._status.config(text=error, fg=THEME["accent2"])
+            return
+        self._items = items
+        self._list.delete(0, "end")
+        for item in items:
+            self._list.insert("end", f"{item['title']} — @{item['uploader_username']}")
+        self._status.config(text=f"{len(items)} pedido(s) pendente(s)", fg=THEME["text_dim"])
+        if items:
+            self._list.selection_set(0)
+            self._show_selected()
+        else:
+            self._set_detail("Nenhum pedido aguardando revisão.")
+
+    def _selected(self):
+        selection = self._list.curselection()
+        return self._items[selection[0]] if selection else None
+
+    def _show_selected(self, _event=None):
+        item = self._selected()
+        if not item:
+            return
+        self._set_detail(
+            f"Título: {item['title']}\n"
+            f"Autor: {item['author']}\n"
+            f"Enviado por: @{item['uploader_username']}\n"
+            f"Risco: {item['risk_level']}\n"
+            f"Confiança automática: {item['confidence']:.0%}\n\n"
+            f"Análise interna:\n{item['justification']}"
+        )
+
+    def _set_detail(self, text):
+        self._detail.config(state="normal")
+        self._detail.delete("1.0", "end")
+        self._detail.insert("1.0", text)
+        self._detail.config(state="disabled")
+
+    def _decide(self, decision):
+        item = self._selected()
+        if not item:
+            messagebox.showinfo("Moderação", "Selecione um pedido primeiro.", parent=self)
+            return
+        verb = "aprovar" if decision == "approved" else "rejeitar"
+        reason = simpledialog.askstring(
+            "Motivo da decisão", f"Explique por que deseja {verb} esta publicação:",
+            parent=self,
+        )
+        if not reason or len(reason.strip()) < 3:
+            return
+        self._run(
+            lambda: api_client.moderate(
+                self._user.token, item["record_id"], decision, reason.strip()
+            ),
+            lambda _result, error: self._decision_finished(error),
+        )
+
+    def _decision_finished(self, error):
+        if error:
+            self._status.config(text=error, fg=THEME["accent2"])
+            return
+        self._refresh()
 
 
 class LangWindow(tk.Toplevel):
@@ -939,9 +1691,16 @@ class ReaderWindow(tk.Toplevel):
         self._immersive = False
         self._fading    = False
         self._slider    = None
+        try: self._content_key = content_id(path)
+        except OSError: self._content_key = os.path.normcase(os.path.abspath(path))
 
         prefs = load_prefs()
         self._manga = prefs.get("manga", False)
+        reader_state = load_reader_state(self._content_key)
+        self._zoom = float(reader_state.get("zoom", self.Z0))
+        self._offset = list(reader_state.get("offset", [0, 0]))
+        self._double = bool(reader_state.get("double", False))
+        self._manga = bool(reader_state.get("manga", self._manga))
 
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         w, h = min(1280, sw-60), min(860, sh-60)
@@ -1498,6 +2257,8 @@ class ReaderWindow(tk.Toplevel):
 
     def _close(self):
         save_progress(self._path, self._idx)
+        save_reader_state(self._content_key, page=self._idx, zoom=self._zoom,
+                          offset=self._offset, double=self._double, manga=self._manga)
         try: self._loader.close()
         except Exception as _e: log.debug("silenced: %s", _e)
         self.destroy()
@@ -1640,10 +2401,25 @@ class ComicCard:
         menu.add_separator()
         menu.add_command(label="▶  Abrir", command=lambda: self._open_cb(path))
 
+        menu.add_separator()
+        menu.add_command(label="📤  Publicar na comunidade", command=lambda: self._publish())
+
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
             menu.grab_release()
+
+    def _publish(self):
+        user = getattr(self._root, "current_user", None)
+        if not _ACCOUNTS_AVAILABLE or user is None:
+            messagebox.showinfo(
+                "Conta necessária",
+                "Crie uma conta ou entre com uma existente para publicar na comunidade.\n\n"
+                "Use \"Sair\" na barra lateral se quiser trocar de conta, ou reabra o app "
+                "e escolha \"Entrar\"/\"Cadastrar\" em vez de convidado.",
+            )
+            return
+        PublishDialog(self._root, self._path, user)
 
     def _animate(self, target: float):
         if self._anim_id:
@@ -2166,14 +2942,399 @@ class LibraryWindow(tk.Tk):
         self._cover_loader = None
         self._search_bubble= None
         self._meta_tooltip = None
+        self._sync_job = None
+        register_change_listener(self._schedule_sync)
+        self._notification_count = 0
+
+        self.current_user = None  # None = convidado; preenchido após login/cadastro
 
         load_icons()
         load_library_config()
         prefs = load_prefs()
         if prefs.get("lang"):
-            self.after(10, self._start)
+            self.after(10, self._show_auth)
         else:
-            LangWindow(self, self._start)
+            LangWindow(self, self._show_auth)
+
+    def _show_auth(self):
+        # Restaura uma sessão somente depois de validá-la sem bloquear a UI.
+        existing = session_store.load_session() if _ACCOUNTS_AVAILABLE else None
+        if existing:
+            def validate():
+                try:
+                    user = api_client.get_current_user(existing.token)
+                    outcome = (user, True)
+                except api_client.ApiUnavailableError:
+                    # A biblioteca local continua utilizável offline.
+                    outcome = (existing, True)
+                except Exception:
+                    session_store.clear_session()
+                    outcome = (None, False)
+                self.after(0, lambda: self._finish_saved_session(*outcome))
+
+            threading.Thread(target=validate, daemon=True).start()
+        else:
+            AuthWindow(self, self._on_auth_done)
+
+    def _finish_saved_session(self, user, usable):
+        if usable:
+            self.current_user = user
+            if user is not None:
+                self._sync_library_state(user)
+            self._start()
+        else:
+            AuthWindow(self, self._on_auth_done)
+
+    def _on_auth_done(self, auth):
+        # auth é None no modo convidado, ou um AuthResponse/LocalSession
+        # com token+usuário. Em nenhum dos dois casos isso bloqueia o
+        # restante do app — biblioteca, leitor e coleções continuam
+        # funcionando exatamente como hoje.
+        self.current_user = auth
+        if auth is not None:
+            self._sync_library_state(auth)
+        self._start()
+
+    def _sync_library_state(self, auth):
+        def worker():
+            try:
+                progress, favorites = load_progress(), set(load_favorites())
+                payload, paths_by_id = build_sync_payload(progress, favorites)
+                merged = api_client.sync_library_state(auth.token, payload)
+                changed = False
+                for item in merged:
+                    path = paths_by_id.get(item["item_key"])
+                    if not path: continue
+                    local = progress.get(path, {})
+                    local_stamp = local.get("ts", 0) if isinstance(local, dict) else 0
+                    remote_stamp = float(item.get("client_updated_at") or 0)
+                    if item.get("page") is not None and remote_stamp > local_stamp:
+                        progress[path] = {"page": item["page"], "ts": remote_stamp}; changed = True
+                    if remote_stamp >= local_stamp:
+                        if item.get("favorite"): favorites.add(path)
+                        else: favorites.discard(path)
+                        changed = True
+                if changed:
+                    _json_save(PROGRESS_FILE, progress); _json_save(FAVORITES_FILE, sorted(favorites))
+            except Exception:
+                log.debug("Sincronização da biblioteca indisponível", exc_info=True)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _schedule_sync(self, _kind=None, _path=None):
+        if self.current_user is None:return
+        if self._sync_job is not None:
+            try:self.after_cancel(self._sync_job)
+            except Exception:pass
+        self._sync_job=self.after(1500,lambda:self._sync_library_state(self.current_user))
+
+    def _open_profile(self):
+        self._active_tab = "profile"
+        self._build_shell()
+        render_profile(
+            self._main, self, self.current_user, api_client, THEME,
+            (FTITLE, FLABEL, FSMALL), self._profile_updated,
+        )
+
+    def _profile_updated(self, data):
+        self.current_user.display_name = data.get("display_name") or self.current_user.display_name
+        if hasattr(self.current_user, "email"):
+            self.current_user.email = data.get("email")
+
+    def _open_notifications(self):
+        self._active_tab = "notifications"
+        self._build_shell()
+        render_notifications(
+            self._main, self, self.current_user, api_client, THEME,
+            (FTITLE, FLABEL, FSMALL), self._set_notification_count,
+        )
+
+    def _set_notification_count(self, count):
+        self._notification_count = max(0, int(count or 0))
+
+    def _refresh_notification_count(self):
+        if self.current_user is None:
+            return
+        def worker():
+            try:
+                items = api_client.notifications(self.current_user.token)
+                count = sum(not item.get("read_at") for item in items)
+            except Exception:
+                return
+            self.after(0, lambda: self._set_notification_count(count))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _open_downloads(self):
+        self._active_tab = "downloads"
+        self._build_shell()
+        render_downloads(self._main, THEME, (FTITLE, FLABEL, FSMALL))
+
+    def _logout(self):
+        if _ACCOUNTS_AVAILABLE and self.current_user is not None:
+            token = getattr(self.current_user, "token", None)
+            if token:
+                try:
+                    api_client.logout(token)
+                except Exception as _e:
+                    log.debug("silenced: %s", _e)  # best-effort; segue com a limpeza local
+            session_store.clear_session()
+        self.current_user = None
+        # Reabre a tela de login por cima da biblioteca (mesmo padrão do
+        # início do app); ao escolher de novo, _on_auth_done reconstrói
+        # o shell — biblioteca local, progresso e favoritos não mudam.
+        AuthWindow(self, self._on_auth_done)
+
+    def _open_moderation(self):
+        if self.current_user is None:
+            messagebox.showinfo("Moderação", "Entre em uma conta para continuar.")
+            return
+        role = getattr(self.current_user, "role", "user")
+        if can_moderate(self.current_user):
+            self._active_tab = "moderation"
+            self._build_shell()
+            self._render_moderation_tab()
+            return
+
+        messagebox.showerror("Moderação", "Sua conta não possui acesso à moderação.", parent=self)
+        return
+
+    def _claim_admin_token(self):
+        if getattr(self.current_user, "role", "user") != "moderator":
+            return
+        setup_token = simpledialog.askstring(
+            "Ativar administrador",
+            "Digite o token de administrador:", parent=self, show="•",
+        )
+        if not setup_token:
+            return
+
+        def worker():
+            try:
+                promoted = api_client.claim_admin(
+                    self.current_user.token, setup_token.strip()
+                )
+                outcome = (promoted, None)
+            except (api_client.ApiAuthError, api_client.ApiServerError) as exc:
+                outcome = (None, str(exc))
+            except api_client.ApiUnavailableError:
+                outcome = (None, "Servidor indisponível.")
+            except Exception:
+                log.exception("Falha ao ativar administrador")
+                outcome = (None, "Não foi possível ativar o cargo de administrador.")
+            self.after(0, lambda: self._finish_moderator_claim(*outcome))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _open_discovery(self):
+        CommunityWindow(self, user=self.current_user, mine=False)
+
+    def _open_my_publications(self):
+        if self.current_user is not None:
+            CommunityWindow(self, user=self.current_user, mine=True)
+
+    def _finish_moderator_claim(self, promoted, error):
+        if error:
+            messagebox.showerror("Administrador", error, parent=self)
+            return
+        self.current_user = promoted
+        session_store.save_session(session_store.LocalSession(
+            token=promoted.token, user_id=promoted.user_id,
+            username=promoted.username, display_name=promoted.display_name,
+            is_moderator=True,
+            role=getattr(promoted, "role", "admin"),
+        ))
+        self._build_shell()
+        self._active_tab = "moderation"
+        self._build_shell()
+        self._render_moderation_tab()
+
+    def _render_moderation_tab(self):
+        for child in self._main.winfo_children():
+            child.destroy()
+        self._moderation_images = []
+        header = tk.Frame(self._main, bg=THEME["bg"])
+        header.pack(fill="x", padx=28, pady=(24, 12))
+        tk.Label(header, text="Moderação", font=FTITLE, bg=THEME["bg"],
+                 fg=THEME["text"]).pack(side="left")
+        make_pill(header, "Atualizar", self._render_moderation_tab,
+                  variant="ghost", font=FBTN, pad_x=14, pad_y=7).pack(side="right")
+        make_pill(header, "Denúncias", self._render_reports_tab,
+                  variant="ghost", font=FBTN, pad_x=14, pad_y=7).pack(side="right", padx=8)
+        if getattr(self.current_user, "role", "user") == "moderator":
+            make_pill(header, "Usar token de administrador", self._claim_admin_token,
+                      variant="accent", font=FSMALL, pad_x=12, pad_y=7).pack(side="right", padx=8)
+        self._moderation_status = tk.Label(
+            self._main, text="Carregando pedidos…", font=FSMALL,
+            bg=THEME["bg"], fg=THEME["text_dim"],
+        )
+        self._moderation_status.pack(anchor="w", padx=28)
+
+        canvas = tk.Canvas(self._main, bg=THEME["bg"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self._main, orient="vertical", command=canvas.yview)
+        self._moderation_grid = tk.Frame(canvas, bg=THEME["bg"])
+        self._moderation_grid.bind(
+            "<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=self._moderation_grid, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(fill="both", expand=True, padx=(20, 0), pady=12)
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+
+        def worker():
+            try:
+                outcome = (api_client.moderation_queue(
+                    self.current_user.token, include_decided=True
+                ), None)
+            except Exception as exc:
+                outcome = (None, str(exc))
+            self.after(0, lambda: self._moderation_loaded(*outcome))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _render_reports_tab(self):
+        for child in self._main.winfo_children(): child.destroy()
+        tk.Label(self._main,text="Denúncias",font=FTITLE,bg=THEME["bg"],fg=THEME["text"]).pack(anchor="w",padx=28,pady=(24,8))
+        status=tk.Label(self._main,text="Carregando…",font=FSMALL,bg=THEME["bg"],fg=THEME["text_dim"]);status.pack(anchor="w",padx=28)
+        area=tk.Frame(self._main,bg=THEME["bg"]);area.pack(fill="both",expand=True,padx=28,pady=12)
+        def worker():
+            try: result,error=api_client.admin_reports(self.current_user.token),None
+            except Exception as exc: result,error=None,str(exc)
+            def done(items,error):
+                status.config(text=error or f"{len(items)} denúncia(s)",fg=THEME["accent2"] if error else THEME["text_dim"])
+                if error:return
+                for item in items:
+                    card=tk.Frame(area,bg=THEME["surface"],padx=14,pady=10);card.pack(fill="x",pady=5)
+                    tk.Label(card,text=f"{item['target_type']} · {item['reason']} · {item['status']}",font=FLABEL,bg=THEME["surface"],fg=THEME["text"]).pack(anchor="w")
+                    tk.Label(card,text=item.get("description") or "Sem descrição",font=FSMALL,bg=THEME["surface"],fg=THEME["text_dim"],wraplength=850,justify="left").pack(anchor="w")
+            self.after(0,lambda:done(result,error))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _moderation_loaded(self, items, error):
+        if error:
+            self._moderation_status.config(text=error, fg=THEME["accent2"])
+            return
+        pending = sum(item.get("status") == "pending_review" for item in items)
+        self._moderation_status.config(
+            text=f"{len(items)} pedido(s) no histórico · {pending} pendente(s)"
+        )
+        if not items:
+            tk.Label(self._moderation_grid, text="Nenhum pedido pendente.", font=FTITLE,
+                     bg=THEME["bg"], fg=THEME["text_dim"]).grid(row=0, column=0, padx=40, pady=70)
+            return
+        for index, item in enumerate(items):
+            self._create_moderation_card(item, index // 4, index % 4)
+
+    def _create_moderation_card(self, item, row, column):
+        card = tk.Frame(self._moderation_grid, bg=THEME["surface"], width=220, height=390)
+        card.grid(row=row, column=column, padx=9, pady=9, sticky="n")
+        card.grid_propagate(False)
+        cover_box = tk.Frame(card, width=190, height=220, bg=THEME["surface_alt"])
+        cover_box.pack(padx=10, pady=(10, 7))
+        cover_box.pack_propagate(False)
+        cover = tk.Label(cover_box,
+                         text="Carregando capa…" if item.get("has_file") else "Sem arquivo",
+                         bg=THEME["surface_alt"], fg=THEME["text_dim"], font=FTINY)
+        cover.pack(fill="both", expand=True)
+        tk.Label(card, text=item["title"], font=FBTN, bg=THEME["surface"],
+                 fg=THEME["text"], wraplength=195).pack(padx=10)
+        status_labels = {"pending_review": "Pendente", "approved": "Aprovado", "rejected": "Rejeitado"}
+        tk.Label(card, text=f"{item['author']} · {status_labels.get(item.get('status'), item.get('status'))}", font=FTINY,
+                 bg=THEME["surface"], fg=THEME["text_dim"], wraplength=195).pack(padx=10, pady=3)
+        buttons = tk.Frame(card, bg=THEME["surface"])
+        buttons.pack(side="bottom", fill="x", padx=8, pady=8)
+        if item.get("has_file"):
+            make_pill(buttons, "Ler", lambda i=item: self._read_moderation_file(i),
+                      variant="ghost", font=FTINY, pad_x=8, pad_y=5).pack(side="left")
+            make_pill(buttons, "Baixar", lambda i=item: self._download_moderation_file(i),
+                      variant="ghost", font=FTINY, pad_x=8, pad_y=5).pack(side="left", padx=3)
+            self._load_moderation_cover(item, cover)
+        if item.get("status") == "pending_review":
+            make_pill(buttons, "✓", lambda i=item: self._moderate_from_tab(i, "approved"),
+                      variant="accent", font=FTINY, pad_x=8, pad_y=5).pack(side="right")
+            make_pill(buttons, "✕", lambda i=item: self._moderate_from_tab(i, "rejected"),
+                      variant="ghost", font=FTINY, pad_x=8, pad_y=5).pack(side="right", padx=3)
+
+    def _load_moderation_cover(self, item, label):
+        def worker():
+            try:
+                data = api_client.moderation_cover(self.current_user.token, item["record_id"])
+                image = Image.open(io.BytesIO(data)).convert("RGB")
+                image.thumbnail((190, 220), Image.LANCZOS)
+                self.after(0, lambda: self._set_moderation_cover(label, image))
+            except Exception:
+                self.after(0, lambda: label.config(text="Capa indisponível"))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _set_moderation_cover(self, label, image):
+        tk_image = ImageTk.PhotoImage(image)
+        self._moderation_images.append(tk_image)
+        label.config(image=tk_image, text="")
+
+    def _moderation_cache_path(self, item):
+        folder = os.path.join(_APPDATA, "moderation_cache")
+        os.makedirs(folder, exist_ok=True)
+        extension = Path(item.get("original_filename") or ".cbz").suffix or ".cbz"
+        return os.path.join(folder, item["record_id"] + extension)
+
+    def _read_moderation_file(self, item):
+        destination = self._moderation_cache_path(item)
+        self._download_for_action(item, destination, open_after=True)
+
+    def _download_moderation_file(self, item):
+        destination = filedialog.asksaveasfilename(
+            parent=self, initialfile=item.get("original_filename") or "quadrinho.cbz"
+        )
+        if destination:
+            self._download_for_action(item, destination, open_after=False)
+
+    def _download_for_action(self, item, destination, open_after):
+        self._moderation_status.config(text="Baixando arquivo…")
+        def worker():
+            try:
+                api_client.download_moderation_file(
+                    self.current_user.token, item["record_id"], destination
+                )
+                outcome = None
+            except Exception as exc:
+                outcome = str(exc)
+            self.after(0, lambda: self._download_finished(destination, open_after, outcome))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _download_finished(self, destination, open_after, error):
+        if error:
+            self._moderation_status.config(text=error, fg=THEME["accent2"])
+            return
+        self._moderation_status.config(text="Download concluído.", fg=THEME["text_dim"])
+        if open_after:
+            try:
+                loader = SmartPageLoader(destination)
+                ReaderWindow(self, destination, loader)
+            except Exception as exc:
+                messagebox.showerror("Leitura", f"Não foi possível abrir o arquivo: {exc}", parent=self)
+
+    def _moderate_from_tab(self, item, decision):
+        verb = "aprovar" if decision == "approved" else "rejeitar"
+        reason = simpledialog.askstring(
+            "Motivo da decisão", f"Explique por que deseja {verb} esta publicação:", parent=self
+        )
+        if not reason or len(reason.strip()) < 3:
+            return
+        def worker():
+            try:
+                api_client.moderate(
+                    self.current_user.token, item["record_id"], decision, reason.strip()
+                )
+                error = None
+            except Exception as exc:
+                error = str(exc)
+            self.after(0, lambda: self._moderation_decided(error))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _moderation_decided(self, error):
+        if error:
+            messagebox.showerror("Moderação", error, parent=self)
+        else:
+            self._render_moderation_tab()
 
     def _start(self):
         self.state("zoomed")
@@ -2182,6 +3343,7 @@ class LibraryWindow(tk.Tk):
         self._meta_tooltip = MetaTooltip(self)
         self._build_shell()
         self.after(200, self._refresh_library)
+        self.after(250, self._refresh_notification_count)
 
     def _build_shell(self):
         for w in self.winfo_children():
@@ -2214,6 +3376,10 @@ class LibraryWindow(tk.Tk):
             self._sidebar_item(label, icon,
                 lambda f=cmd, t=tab: (setattr(self, "_active_tab", t), self._build_shell(), f())[-1],
                 active=active, font=FBTN, pady=11)
+        self._sidebar_item("  Descobrir", ICONS.get("collections"),
+                           self._open_discovery, active=False, font=FBTN, pady=11)
+        self._sidebar_item("  Downloads", ICONS.get("open"),
+                           self._open_downloads, active=(self._active_tab == "downloads"), font=FBTN, pady=11)
         tk.Frame(self._sb, bg=c["surface"]).pack(fill="both", expand=True)
         sb_sep()
         for txt, cmd, icon in [
@@ -2223,6 +3389,28 @@ class LibraryWindow(tk.Tk):
             ("  Restaurar", self._do_restore, ICONS.get("restore")),
         ]:
             self._sidebar_item(txt, icon, cmd, active=False, font=FLABEL, pady=9)
+
+        if self.current_user is not None:
+            sb_sep()
+            self._sidebar_item("  Meu perfil", ICONS.get("collections"),
+                                self._open_profile, active=(self._active_tab == "profile"), font=FLABEL, pady=9)
+            notification_text = "  Notificações"
+            if self._notification_count:
+                notification_text += f" ({self._notification_count})"
+            self._sidebar_item(notification_text, ICONS.get("collections"),
+                                self._open_notifications, active=(self._active_tab == "notifications"), font=FLABEL, pady=9)
+            self._sidebar_item("  Meus envios", ICONS.get("library"),
+                                self._open_my_publications, active=False, font=FLABEL, pady=9)
+            role = getattr(self.current_user, "role", "user")
+            has_moderation_access = can_moderate(self.current_user)
+            if has_moderation_access:
+                self._sidebar_item("  Moderação", ICONS.get("collections"),
+                                    self._open_moderation,
+                                    active=(self._active_tab == "moderation"), font=FLABEL, pady=9)
+            username = getattr(self.current_user, "username", "conta")
+            self._sidebar_item(f"  Sair ({username})", ICONS.get("logout"),
+                                self._logout, active=False, font=FLABEL, pady=9)
+
         tk.Frame(self._sb, bg=c["surface"], height=8).pack()
 
         self._main = tk.Frame(self, bg=c["bg"])

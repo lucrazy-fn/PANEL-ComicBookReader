@@ -142,10 +142,44 @@ Dê **duplo clique** em qualquer capa. Ou clique duas vezes num arquivo `.cbz` /
 
 ```bash
 git clone https://github.com/lucrazy-fn/PANEL-ComicBookReader
-cd panel
-python -m pip install pillow rarfile pymupdf
+cd PANEL-ComicBookReader
+python -m pip install -e .
 python ComicReader.py
 ```
+
+Para desenvolver ou executar a API opcional de contas e publicações:
+
+```bash
+python -m pip install -e ".[server,test]"
+python -m uvicorn panel_backend.api.app:app --reload
+python -m pytest
+```
+
+### Configurar um moderador
+
+1. Copie `.env.example` para `.env`.
+2. Troque `PANEL_MODERATOR_SETUP_TOKEN` por um segredo longo e privado.
+3. Inicie a API com `startserver.bat`.
+4. Entre em uma conta no Panel e clique em **Moderação**.
+5. Digite o segredo uma única vez para promover essa conta.
+
+O segredo de configuração não substitui o login. Depois da promoção, a
+permissão fica registrada na conta e todas as aprovações/rejeições guardam o
+moderador responsável e o motivo. Não compartilhe nem versione o `.env`.
+
+Moderadores podem gerar convites temporários em
+`http://127.0.0.1:8000/moderator-tokens`. Cada convite aceita de 1 a 5 usos e
+validade entre 1 hora e 5 dias. O segredo aparece somente uma vez; o banco
+armazena apenas seu hash. Convites ativos também podem ser revogados na página.
+
+### Arquivos da comunidade
+
+Ao publicar, o arquivo é enviado ao armazenamento local do servidor em
+`panel_storage/`. A moderação aparece como uma aba do aplicativo e permite
+ver a capa, abrir o quadrinho no leitor, baixar, aprovar ou rejeitar. Por
+padrão, uploads são limitados a 250 MB e o conteúdo descompactado a 1,5 GB;
+os limites podem ser alterados com `PANEL_MAX_UPLOAD_MB` e
+`PANEL_MAX_UNCOMPRESSED_MB`.
 
 ---
 

@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite3
+moderation_records.json
+_demo_moderation_records.json
+.env
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+panel_storage/
