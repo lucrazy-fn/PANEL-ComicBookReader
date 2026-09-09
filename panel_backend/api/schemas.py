@@ -1,8 +1,3 @@
-"""
-Contratos de entrada/saída da API. Mantidos separados das rotas
-propositalmente — dá pra ver o "contrato público" da API inteiro num
-único arquivo, sem precisar ler lógica de negócio junto.
-"""
 
 from __future__ import annotations
 
@@ -12,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-# ---------- Auth ----------
+
 
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=32, pattern=r"^[a-zA-Z0-9_.-]+$")
@@ -178,7 +173,7 @@ class ManagedUserDetail(BaseModel):
     recent_actions: list[AuditLogPublic]
 
 
-# ---------- Publications ----------
+
 
 class PublicationSubmitRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
@@ -253,7 +248,7 @@ class MyPublicationItem(BaseModel):
     chapter_number: int | None = None
 
 
-# ---------- Moderation ----------
+
 
 class ModerationQueueItem(BaseModel):
     record_id: str

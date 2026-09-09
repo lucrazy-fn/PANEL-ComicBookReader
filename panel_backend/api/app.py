@@ -1,12 +1,3 @@
-"""
-Ponto de entrada da API. Rodar localmente com:
-
-    uvicorn panel_backend.api.app:app --reload
-
-Isso sobe em http://localhost:8000 — que é exatamente o default que
-panel_client/api_client.py já espera (troque via variável de ambiente
-PANEL_API_BASE_URL dos dois lados se for rodar em outro endereço).
-"""
 
 from __future__ import annotations
 

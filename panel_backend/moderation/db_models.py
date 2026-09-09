@@ -1,4 +1,3 @@
-"""Modelo SQL da trilha de auditoria da moderação."""
 
 from __future__ import annotations
 

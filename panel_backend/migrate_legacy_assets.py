@@ -1,4 +1,3 @@
-"""Importa caminhos locais das primeiras versões para o storage seguro."""
 
 from __future__ import annotations
 

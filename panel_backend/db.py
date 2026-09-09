@@ -1,9 +1,3 @@
-"""
-Configuração central do banco. SQLite por padrão (zero-config, arquivo
-local) — troque PANEL_DATABASE_URL por uma URL Postgres quando o projeto
-for hospedado de verdade. Nenhum outro módulo deveria abrir conexão
-diretamente; todos usam `get_session()` / `init_db()` daqui.
-"""
 
 from __future__ import annotations
 
@@ -30,9 +24,9 @@ _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
 
 def init_db() -> None:
-    """Cria as tabelas que ainda não existem. Chame uma vez na subida da API."""
-    # Importa os módulos de modelo para que suas tabelas sejam registradas
-    # em Base.metadata antes do create_all.
+    pass
+
+
     from panel_backend.accounts import models as _accounts_models  # noqa: F401
     from panel_backend.catalog import models as _catalog_models    # noqa: F401
     from panel_backend.moderation import db_models as _moderation_models  # noqa: F401
@@ -42,11 +36,7 @@ def init_db() -> None:
 
 
 def _migrate_legacy_schema() -> None:
-    """Migrações mínimas para bancos locais criados antes dos papéis.
-
-    O projeto ainda não usa Alembic; esta alteração aditiva mantém o banco
-    existente utilizável sem apagar contas.
-    """
+    pass
     inspector = inspect(_engine)
     if "users" not in inspector.get_table_names():
         return

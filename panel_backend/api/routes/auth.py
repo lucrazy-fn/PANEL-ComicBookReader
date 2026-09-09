@@ -36,7 +36,7 @@ def _check_login_limit(key: str):
 
 @router.get("/me", response_model=UserPublic)
 def me(user: User = Depends(get_current_user)):
-    """Valida a sessão e devolve o usuário atualmente autenticado."""
+    pass
     return UserPublic(
         id=user.id,
         username=user.username,
@@ -52,7 +52,7 @@ def claim_moderator(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Eleva moderador a administrador; o token mestre cria/recupera o dono."""
+    pass
     if user.role in {"admin", "owner"}:
         return UserPublic(
             id=user.id, username=user.username,
@@ -124,11 +124,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 @router.post("/logout", status_code=204)
 def logout(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    """
-    Idempotente de propósito: mesmo com token ausente/já inválido, retorna
-    204 em vez de erro — do ponto de vista do cliente, "sair" sempre deu
-    certo (a sessão local é apagada de qualquer forma).
-    """
+    pass
     if authorization and authorization.startswith("Bearer "):
         token = authorization.removeprefix("Bearer ").strip()
         accounts.logout(db, token)

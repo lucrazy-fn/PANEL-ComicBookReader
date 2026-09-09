@@ -1,4 +1,3 @@
-"""Persistência local da biblioteca, independente da interface Tk."""
 from __future__ import annotations
 
 import json
@@ -16,7 +15,14 @@ FAVORITES_FILE = os.path.join(APPDATA_DIR, "favorites.json")
 MANUAL_STATUS_FILE = os.path.join(APPDATA_DIR, "manual_status.json")
 PREFS_FILE = os.path.join(APPDATA_DIR, "prefs.json")
 COVER_CACHE_DIR = os.path.join(APPDATA_DIR, "cover_cache")
-os.makedirs(COVER_CACHE_DIR, exist_ok=True)
+try:
+    os.makedirs(COVER_CACHE_DIR, exist_ok=True)
+except FileExistsError:
+
+
+
+    COVER_CACHE_DIR = os.path.join(APPDATA_DIR, "cover_cache_files")
+    os.makedirs(COVER_CACHE_DIR, exist_ok=True)
 
 def json_load(path, default):
     try:

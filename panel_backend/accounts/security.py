@@ -1,9 +1,3 @@
-"""
-Hash de senha com PBKDF2-HMAC-SHA256 (só biblioteca padrão — sem bcrypt/
-argon2 por enquanto pra não adicionar dependência de compilação nativa
-antes de definir onde isso vai rodar). Se depois quiser trocar para
-argon2/bcrypt, só este arquivo muda.
-"""
 
 from __future__ import annotations
 
@@ -18,7 +12,7 @@ _ITERATIONS = 260_000
 
 
 def hash_password(plain_password: str) -> tuple[str, str]:
-    """Retorna (hash_hex, salt_hex)."""
+    pass
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt, _ITERATIONS)
     return digest.hex(), salt.hex()

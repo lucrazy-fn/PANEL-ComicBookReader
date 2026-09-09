@@ -1,4 +1,3 @@
-"""Identidade por conteúdo e preparação do estado sincronizável."""
 from __future__ import annotations
 import hashlib
 import os

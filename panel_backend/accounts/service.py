@@ -1,11 +1,3 @@
-"""
-Serviço de contas — cadastro, login, validação de sessão.
-
-Assim como o ModerationService, este é o único ponto de entrada que a
-futura API (ou a tela de login do ComicReader.py, via panel_client/)
-deveria chamar. Ninguém fora daqui deveria fazer query direta nas tabelas
-de User/SessionToken.
-"""
 
 from __future__ import annotations
 
@@ -66,7 +58,7 @@ def register_user(
         password_salt=password_salt,
     )
     db.add(user)
-    db.flush()  # garante user.id preenchido antes de criar o token
+    db.flush()
 
     session_token = SessionToken(user_id=user.id)
     db.add(session_token)

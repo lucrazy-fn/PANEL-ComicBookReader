@@ -1,198 +1,140 @@
-# <img width="150" height="150" alt="panellogo" src="https://github.com/user-attachments/assets/2a81e833-9854-4823-a0f3-5134dd2823c2" />
+<p align="center"><img src="panellogo.png" width="160" alt="Logo PANEL"></p>
 
+# PANEL · Comic Book Reader
 
-> Leitor de quadrinhos leve, bonito e rápido para Windows.
+Sua biblioteca de quadrinhos, do seu jeito. Leitor para Windows com capas, coleções, progresso salvo e recursos de comunidade opcionais.
 
-![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6?style=flat&logo=windows)
-![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python)
-![Version](https://img.shields.io/badge/Versão-1.2_Beta-orange?style=flat)
-![License](https://img.shields.io/badge/Licença-MIT-green?style=flat)
+**1.3 · Windows 10/11 · Python 3.10+ · MIT**
 
----
+[Releases](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) · [Reportar problema](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)
 
-## Download
+> Em desenvolvimento. Os recursos descritos aqui correspondem ao código desta versão; releases antigas podem não incluí-los.
 
-Baixe o instalador na aba [**Releases**](https://github.com/lucrazy-fn/PANEL-ComicBookReader/releases) e execute o `Panel_Reader_Setup_v1.2.exe`.
+## Comece por aqui
 
-> ⚠️ **v1.2 Beta** — Atualização grande com muitas features novas. O Panel é feito por uma pessoa só, então pode conter bugs. Se encontrar algum problema, [abre uma issue](https://github.com/lucrazy-fn/PANEL-ComicBookReader/issues)!
+Se houver um instalador disponível em Releases, baixe e execute o arquivo de instalação. O pacote gerado por este projeto inclui Python e as bibliotecas do leitor: o usuário não precisa instalar Python.
 
----
+1. Abra o PANEL e use o modo convidado para leitura local.
+2. Clique em **Pasta** e escolha onde estão seus quadrinhos.
+3. Abra uma capa para começar. O progresso fica salvo no computador.
 
-## Sobre
+O instalador cria um atalho no menu Iniciar e oferece um atalho opcional na área de trabalho. A instalação é por usuário, sem exigir administrador. Os dados em `%APPDATA%\Panel` são preservados na desinstalação.
 
-Panel é um leitor de quadrinhos feito em Python com foco em ser simples, rápido e visualmente agradável. Sem propagandas, sem conta, sem internet — só você e seus quadrinhos.
+## O que tem no app
 
----
+- **Biblioteca:** capas, busca, favoritos, filtros e progresso de leitura.
+- **Coleções:** organização por pastas e agrupamento de séries.
+- **Leitor:** zoom, miniaturas, marcadores, tela cheia, página dupla, modo mangá e leitura vertical.
+- **Personalização:** temas, traduções e animações de interação.
+- **Backup:** exportação e restauração dos dados de leitura.
+- **Com uma API disponível:** conta, perfil, notificações, sincronização, Descobrir, downloads, publicação e remoção dos próprios envios.
+- **Equipe:** revisão de publicações, denúncias e painel administrativo em `/moderators`, conforme o cargo da conta.
 
-## Screenshots
+Publique somente conteúdo próprio ou que você tenha autorização para distribuir.
 
-**Biblioteca**
-<img width="1920" height="1032" alt="{665B1181-5D3D-457B-8391-F0D69DA6513C}" src="https://github.com/user-attachments/assets/4c4a5d9f-bb73-4168-b752-f7056dc79b82" />
+## Formatos de leitura local
 
+| Arquivos | Dependência |
+| --- | --- |
+| CBZ / ZIP | Suporte nativo |
+| PDF | PyMuPDF, incluído no pacote do leitor |
+| CBR / RAR | 7-Zip ou ferramenta compatível com rarfile, como UnRAR |
+| 7Z / CB7 / TAR / CBT | 7-Zip instalado separadamente |
 
----
+Os arquivos compactados precisam conter páginas de imagem. Arquivos protegidos por senha não são suportados nesta integração.
 
-**Hover nas capas**
-<img width="1920" height="1032" alt="{A5FBAFE0-D6DB-4E30-9576-5C1BEE25B8AB}" src="https://github.com/user-attachments/assets/b48b07cf-1543-4e7f-bd35-e4357ad06982" />
+O app procura `7z`/`7zz` no PATH e o 7-Zip nas pastas padrão do Windows. Para uma instalação diferente, defina `PANEL_7ZIP_PATH` com o caminho completo de `7z.exe` antes de iniciar o app. O instalador do PANEL não redistribui o 7-Zip.
 
+Os uploads da comunidade continuam limitados a CBZ, ZIP, CBR, RAR e PDF; suporte local não significa suporte para publicação.
 
----
+## Rodar pelo código
 
-**Leitor**
-<img width="1920" height="1080" alt="{E7D8B7CA-3CE4-4A12-AC8B-1B3DD0936D6C}" src="https://github.com/user-attachments/assets/0716f1d7-a6b7-4375-b6dd-7a538e4c024e" />
+No PowerShell, dentro da pasta do projeto:
 
-
----
-
-**Coleções**
-<img width="1920" height="1032" alt="{379E4AD8-43AD-4326-8E4F-124AB2EAF3F2}" src="https://github.com/user-attachments/assets/c7aa22d4-af69-4af9-8d30-875d5de88e21" />
-
-
----
-
-## Funcionalidades
-
-### 📚 Biblioteca
-- Visualização em grade com capas carregadas em segundo plano
-- Hover animado nas capas com efeito de zoom e overlay
-- Filtros de status: *Não lidos*, *Lendo*, *Concluídos*, *Favoritos*
-- Busca por título, série, autor e editora
-- Seção "Continuar Lendo" com os últimos abertos
-- Progresso de leitura salvo automaticamente
-
-### 🖱️ Menu de contexto
-- Clique com botão direito em qualquer capa
-- Favoritar/desfavoritar com ★ dourado visível no card
-- Marcar como *Lendo* (badge azul) ou *Concluído* (badge verde)
-
-### 📖 Leitor
-- Zoom livre com scroll, botões ou slider
-- Zoom centrado no cursor com `Ctrl + Scroll`
-- Arrasto da imagem com o mouse
-- Rotação de página (`R`)
-- Controle de brilho (`[` e `]`)
-- Animação de transição suave entre páginas
-- Barra de progresso clicável para pular páginas
-- Modo tela cheia (`F` / `F11`)
-- Modo imersivo (`I`) — esconde toda a interface
-- Bookmarks marcados na barra de progresso
-
-### ▭▭ Página Dupla
-- Visualiza duas páginas lado a lado
-- Funciona junto com o modo mangá
-
-### 🖼️ Miniaturas
-- Faixa de miniaturas de todas as páginas
-- Clique em qualquer miniatura para ir direto
-
-### 📚 Coleções
-- Subpastas da biblioteca viram coleções automaticamente
-- Arquivos com nome similar são agrupados em séries
-- Filtros: *Todos*, *Pastas*, *Séries*
-- Ordenação por *Nome*, *Data* ou *Progresso*
-- Progresso da série visível no card da coleção
-- Botão "Continuar Lendo" retoma da última edição aberta
-
-### 💾 Backup
-- Exporta progresso, bookmarks e favoritos em `.json`
-- Importa de volta — útil ao trocar de computador
-
----
-
-## Como usar
-
-### 1. Configurar a biblioteca
-Clique em **Pasta** no menu lateral e selecione a pasta com seus quadrinhos.
-
-### 2. Abrir um quadrinho
-Dê **duplo clique** em qualquer capa. Ou clique duas vezes num arquivo `.cbz` / `.cbr` direto pelo Windows Explorer.
-
-### 3. Controles do leitor
-
-| Ação | Tecla / Mouse |
-|---|---|
-| Próxima página | `→` · `PageDown` · Scroll ↓ |
-| Página anterior | `←` · `PageUp` · Scroll ↑ |
-| Zoom in/out | `=` / `-` · Ctrl + Scroll |
-| Encaixar na tela | Botão **Encaixar** |
-| Arrastar imagem | Clique e arraste |
-| Girar página | `R` |
-| Brilho | `[` diminui · `]` aumenta |
-| Tela cheia | `F` · `F11` |
-| Modo imersivo | `I` |
-| Bookmark | `B` |
-| Miniaturas | `G` |
-| Alternar tema | `T` |
-| Atalhos | `?` |
-| Sair tela cheia | `Esc` |
-
----
-
-## Formatos suportados
-
-| Formato | Suporte |
-|---|---|
-| `.cbz` / `.zip` | ✅ Nativo |
-| `.cbr` / `.rar` | ✅ Com [WinRAR](https://www.win-rar.com/) instalado |
-| `.pdf` | ✅ Com `pip install pymupdf` |
-
----
-
-## Instalação manual (código fonte)
-
-```bash
-git clone https://github.com/lucrazy-fn/PANEL-ComicBookReader
-cd PANEL-ComicBookReader
-python -m pip install -e .
-python ComicReader.py
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[server,test]"
+.\.venv\Scripts\python.exe -m panel_app
 ```
 
-Para desenvolver ou executar a API opcional de contas e publicações:
+Também é possível usar `startapp.bat`. Use uma instalação do Python com Tkinter funcionando.
 
-```bash
-python -m pip install -e ".[server,test]"
-python -m uvicorn panel_backend.api.app:app --reload
-python -m pytest
+## Contas e servidor
+
+O leitor local funciona sem servidor. Login, sincronização e comunidade exigem a API; o instalador desktop **não inclui nem inicia o backend**.
+
+Para desenvolvimento, execute em outro terminal:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn panel_backend.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-### Configurar um moderador
+A entrada pelo código também tenta iniciar uma API local automaticamente quando necessário. Para conectar a outra API, configure antes de iniciar o app:
 
-1. Copie `.env.example` para `.env`.
-2. Troque `PANEL_MODERATOR_SETUP_TOKEN` por um segredo longo e privado.
-3. Inicie a API com `startserver.bat`.
-4. Entre em uma conta no Panel e clique em **Moderação**.
-5. Digite o segredo uma única vez para promover essa conta.
+```powershell
+$env:PANEL_API_BASE_URL = "https://seu-servidor.example"
+```
 
-O segredo de configuração não substitui o login. Depois da promoção, a
-permissão fica registrada na conta e todas as aprovações/rejeições guardam o
-moderador responsável e o motivo. Não compartilhe nem versione o `.env`.
+Esse endereço é apenas um exemplo, não um servidor público do PANEL. Sem API configurada, use o modo convidado. Um servidor local em cada computador não cria uma comunidade compartilhada.
 
-Moderadores podem gerar convites temporários em
-`http://127.0.0.1:8000/moderator-tokens`. Cada convite aceita de 1 a 5 usos e
-validade entre 1 hora e 5 dias. O segredo aparece somente uma vez; o banco
-armazena apenas seu hash. Convites ativos também podem ser revogados na página.
+Consulte `.env.example` e `startserver.bat` para a configuração de desenvolvimento. Nunca distribua `.env`, tokens, `panel.db` ou a pasta `panel_storage`. Não exponha o servidor de desenvolvimento diretamente à internet.
 
-### Arquivos da comunidade
+## Gerar executável e instalador
 
-Ao publicar, o arquivo é enviado ao armazenamento local do servidor em
-`panel_storage/`. A moderação aparece como uma aba do aplicativo e permite
-ver a capa, abrir o quadrinho no leitor, baixar, aprovar ou rejeitar. Por
-padrão, uploads são limitados a 250 MB e o conteúdo descompactado a 1,5 GB;
-os limites podem ser alterados com `PANEL_MAX_UPLOAD_MB` e
-`PANEL_MAX_UNCOMPRESSED_MB`.
+Ferramentas: Python com Tkinter, PyInstaller e **Inno Setup 6**. Compile no Windows usando a arquitetura que deseja distribuir.
 
----
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[build]"
+powershell -ExecutionPolicy Bypass -File .\build_installer.ps1
+```
 
-## Plataformas
+O script procura o compilador `ISCC.exe` no PATH e na pasta padrão do Inno Setup 6. Se não o encontrar, o executável permanece disponível, mas o instalador não será gerado.
 
-| Sistema | Suporte |
-|---|---|
-| Windows 10 / 11 | ✅ |
-| Linux | 🔜 Futuramente |
-| macOS | 🔜 Futuramente |
+Saídas:
 
----
+- `dist\PANEL\PANEL.exe`: leitor empacotado. Para distribuir sem instalador, envie **toda a pasta PANEL**, não apenas o EXE.
+- `dist\installer\PANEL-Setup-1.3.0.exe`: instalador, quando o Inno Setup estiver disponível.
+
+Para gerar somente o executável:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_installer.ps1 -ExecutableOnly
+```
+
+O pacote inclui apenas recursos explicitamente selecionados e dependências do leitor, sem os dados locais do servidor. O executável não tem assinatura digital configurada; o Windows pode mostrar um aviso de reputação.
+
+### Antes de publicar uma release
+
+1. Execute os testes: `.\.venv\Scripts\python.exe -m pytest`.
+2. Gere o instalador e teste instalação, abertura, capas, PDF, 7-Zip e desinstalação em um Windows sem Python.
+3. Verifique o modo convidado e, separadamente, a conexão com a API.
+4. Atualize as versões em `pyproject.toml`, `installer/Panel.iss` e no nome de saída do script.
+5. Crie uma release no GitHub e anexe o instalador. Não envie banco, uploads ou segredos.
+
+O script não publica nada automaticamente e não implementa atualização automática.
+
+## Estrutura
+
+```text
+panel_app/       Interface, leitor, biblioteca e dados locais
+panel_client/    Cliente HTTP para a API
+panel_backend/   Contas, catálogo, moderação e API
+installer/       Entrada de empacotamento, PyInstaller e Inno Setup
+tests/           Testes automatizados
+Icons/           Recursos visuais
+```
+
+`python -m panel_app` é a entrada principal. `ComicReader.py` mantém compatibilidade com a organização antiga.
+
+## Problemas comuns
+
+- **Login sem conexão:** confira a API e `PANEL_API_BASE_URL`; leitura local continua disponível como convidado.
+- **CBR/7Z não abre:** confira a instalação do 7-Zip, a integridade do arquivo e se ele possui senha.
+- **Capas ou ícones ausentes no pacote:** mantenha a pasta gerada inteira; não mova somente o EXE.
+- **Erro de Tkinter ao compilar:** verifique o Python usado para criar a `.venv` antes de gerar o pacote.
+
+Ao abrir uma issue, informe versão, mensagem de erro e passos para reproduzir. Não anexe senhas, tokens ou obras sem autorização.
 
 ## Licença
 
-Veja o arquivo [LICENSE](https://github.com/lucrazy-fn/PANEL-ComicBookReader?tab=MIT-1-ov-file).
+O código do PANEL usa a [licença MIT](LICENSE). Dependências e ferramentas externas mantêm suas próprias licenças; revise suas condições antes de redistribuir o pacote.

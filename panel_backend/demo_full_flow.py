@@ -1,13 +1,3 @@
-"""
-Demonstração do fluxo completo: cadastro -> login -> envio de quadrinho
--> moderação -> publicação. Rode com:
-
-    python -m panel_backend.demo_full_flow
-
-Usa SQLite local (panel.db, criado na primeira execução) e o JSON de
-moderação (_demo_moderation_records.json). Apague os dois se quiser
-recomeçar do zero.
-"""
 
 from __future__ import annotations
 
@@ -24,7 +14,7 @@ def main():
     moderation_service = ModerationService(store=JsonModerationStore("./_demo_moderation_records.json"))
 
     with get_session() as db:
-        # 1. Cadastro (ou login, se já existir de uma execução anterior)
+
         try:
             auth = accounts.register_user(db, username="maria_autora", password="senha-forte-123")
             print(f"Conta criada: {auth.user.username} (id={auth.user.id})")
@@ -32,7 +22,7 @@ def main():
             auth = accounts.authenticate(db, username="maria_autora", password="senha-forte-123")
             print(f"Login realizado: {auth.user.username}")
 
-        # 2. Envio de um quadrinho autoral, com declaração e licença
+
         outcome = catalog.submit_publication(
             db,
             moderation_service=moderation_service,
@@ -52,7 +42,7 @@ def main():
         print(f"Visível na comunidade? {outcome.publication.is_visible_to_community()}")
         print(f"Mensagem pública: {outcome.public_message}")
 
-        # 3. Tentativa suspeita, pelo mesmo usuário
+
         outcome2 = catalog.submit_publication(
             db,
             moderation_service=moderation_service,

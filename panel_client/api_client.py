@@ -1,12 +1,3 @@
-"""
-Cliente HTTP fino pra falar com panel_backend/api. Nada no ComicReader.py
-deveria montar uma URL ou fazer uma request diretamente; tudo passa por
-aqui.
-
-Qualquer falha de rede (API fora do ar, sem internet) é tratada como
-"não foi possível fazer isso agora" — nunca derruba o app. O modo
-convidado continua 100% funcional mesmo com a API offline.
-"""
 
 from __future__ import annotations
 
@@ -21,15 +12,15 @@ _TIMEOUT_SECONDS = 5
 
 
 class ApiUnavailableError(Exception):
-    """API fora do ar, sem internet, ou timeout. Não é erro de credenciais."""
+    pass
 
 
 class ApiAuthError(Exception):
-    """Usuário/senha inválidos, usuário já em uso, sessão expirada, etc — erro do usuário, não da rede."""
+    pass
 
 
 class ApiServerError(Exception):
-    """A API respondeu, mas não conseguiu concluir a operação."""
+    pass
 
 
 @dataclass
@@ -63,12 +54,7 @@ def confirm_2fa(token: str, code: str): return _request_json("POST","/account/2f
 
 
 def logout(token: str) -> None:
-    """
-    Best-effort: revoga o token no servidor, mas nunca lança exceção.
-    O chamador (ComicReader.py) deve limpar a sessão local independente
-    do resultado — "sair" não pode falhar do ponto de vista do usuário
-    só porque a internet caiu.
-    """
+    pass
     try:
         requests.post(
             f"{BASE_URL}/auth/logout",
@@ -80,7 +66,7 @@ def logout(token: str) -> None:
 
 
 def get_current_user(token: str) -> AuthResponse:
-    """Valida um token salvo antes de restaurar a sessão."""
+    pass
     data = _request_json(
         "GET", "/auth/me", token=token,
         auth_error="Sessão expirada ou inválida.",
@@ -106,7 +92,7 @@ def claim_moderator(token: str, setup_token: str) -> AuthResponse:
         role=data.get("role", "admin"),
     )
 
-# Nome novo; o antigo permanece como compatibilidade para integrações existentes.
+
 claim_admin = claim_moderator
 
 def update_profile(token: str, display_name: str, email: str | None) -> dict:
@@ -151,6 +137,10 @@ def discovery() -> list[dict]:
     return data
 
 
+def remove_publication(token: str, publication_id: str) -> None:
+    _request_json("DELETE", f"/publications/{publication_id}", token=token)
+
+
 def my_publications(token: str) -> list[dict]:
     data = _request_json("GET", "/publications/mine", token=token)
     if not isinstance(data, list):
@@ -175,13 +165,7 @@ def submit_publication(
     authorization_declared: bool = False, license: str | None = None,
     series_title: str | None = None, chapter_number: int | None = None,
 ) -> PublicationResult:
-    """
-    Envia os METADADOS do quadrinho pra moderação/comunidade. O arquivo em
-    si continua no computador do usuário — não existe upload de arquivo
-    ainda (isso é um passo futuro separado, de armazenamento). Por
-    enquanto file_reference é só o caminho local, útil pra rastrear qual
-    arquivo originou a publicação.
-    """
+    pass
     data = _request_json(
         "POST", "/publications", token=token,
         auth_error="Sua sessão expirou. Entre novamente para publicar.",

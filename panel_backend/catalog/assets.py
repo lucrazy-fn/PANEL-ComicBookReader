@@ -1,4 +1,3 @@
-"""Armazenamento e validação dos arquivos enviados à comunidade."""
 
 from __future__ import annotations
 
@@ -67,8 +66,8 @@ def resolve_asset(stored_name: str) -> Path:
 def _validate_file(path: Path, extension: str) -> None:
     with path.open("rb") as source:
         header = source.read(8)
-    # Alguns distribuidores usam extensão .cbr em arquivos que são ZIP.
-    # Detectamos pelo conteúdo, assim como o leitor desktop.
+
+
     if zipfile.is_zipfile(path):
         total = 0
         with zipfile.ZipFile(path) as archive:

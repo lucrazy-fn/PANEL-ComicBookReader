@@ -1,4 +1,3 @@
-"""Fila de downloads com progresso, pausa, cancelamento e histórico."""
 from __future__ import annotations
 from dataclasses import dataclass, asdict
 import os, threading, time, uuid

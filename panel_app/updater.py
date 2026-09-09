@@ -1,7 +1,6 @@
-"""Consulta opcional de versão; nunca substitui arquivos sem confirmação."""
 import os
 import requests
-CURRENT_VERSION="1.2.0b1"
+CURRENT_VERSION="1.3.0"
 def check():
     url=os.environ.get("PANEL_UPDATE_MANIFEST_URL")
     if not url:return None

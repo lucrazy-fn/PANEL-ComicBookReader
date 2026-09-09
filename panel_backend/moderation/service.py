@@ -1,14 +1,3 @@
-"""
-ModerationService: ponto único de entrada do sistema de moderação.
-
-Este é o único módulo que o resto do backend (rota de upload/publicação)
-deveria importar. Ele:
-  1. Roda todos os analisadores disponíveis sobre a submissão
-  2. Combina os achados num único resultado
-  3. Decide o status final (approved / pending_review / rejected)
-  4. Persiste o registro para histórico/futura revisão manual
-  5. Nunca decide "isto é ilegal" — só classifica risco (ver ModerationResult.public_message)
-"""
 
 from __future__ import annotations
 
@@ -37,8 +26,8 @@ class ModerationService:
     ):
         self._store = store
         self._config = config or ModerationConfig.from_env()
-        # Ordem dos analisadores na lista não importa para o resultado —
-        # o pior risco encontrado por qualquer um deles prevalece.
+
+
         self._analyzers = analyzers or [
             MetadataRulesAnalyzer(),
             AIAnalyzer(self._config),
@@ -53,13 +42,13 @@ class ModerationService:
             try:
                 findings.append(analyzer.analyze(submission))
             except NotImplementedError:
-                # Analisadores ainda não implementados (ex: AIAnalyzer na v1)
-                # são simplesmente pulados — não devem derrubar a triagem.
+
+
                 continue
             except Exception as exc:  # noqa: BLE001
-                # Falha real de um analisador (ex: API externa fora do ar)
-                # também não deve travar a publicação inteira; registramos
-                # como um finding de baixa confiança e seguimos.
+
+
+
                 findings.append(
                     AnalyzerFinding(
                         analyzer_name=getattr(analyzer, "name", "unknown"),
@@ -77,8 +66,8 @@ class ModerationService:
         self, submission: PublicationSubmission, findings: list[AnalyzerFinding]
     ) -> ModerationResult:
         if not findings:
-            # Nenhum analisador disponível/rodou — não aprova automaticamente
-            # às cegas; manda para revisão humana por segurança.
+
+
             return ModerationResult(
                 submission_user_id=submission.user_id,
                 status=ModerationStatus.PENDING_REVIEW,
@@ -92,8 +81,8 @@ class ModerationService:
             )
 
         worst = max(findings, key=lambda f: _RISK_ORDER.index(f.risk_level))
-        # Confiança do resultado combinado = maior confiança entre os
-        # analisadores que apontaram o risco mais alto encontrado.
+
+
         relevant = [f for f in findings if f.risk_level == worst.risk_level]
         confidence = max(f.confidence for f in relevant)
 
@@ -118,7 +107,7 @@ class ModerationService:
         if risk in (RiskLevel.MEDIUM, RiskLevel.HIGH):
             return ModerationStatus.PENDING_REVIEW
         if risk == RiskLevel.LOW and confidence < self._config.auto_pending_threshold:
-            # Baixíssima confiança mesmo em risco baixo -> por segurança,
-            # revisão humana em vez de aprovação automática.
+
+
             return ModerationStatus.PENDING_REVIEW
         return ModerationStatus.APPROVED

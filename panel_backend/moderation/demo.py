@@ -1,11 +1,3 @@
-"""
-Demonstração manual do fluxo de moderação. Rode com:
-    python -m panel_backend.moderation.demo
-
-Não é um teste automatizado formal (isso viria depois, com pytest) —
-serve só para você ver o sistema funcionando de ponta a ponta e revisar
-se as decisões fazem sentido antes de integrar ao resto do backend.
-"""
 
 from __future__ import annotations
 
@@ -27,7 +19,7 @@ def main():
     store = JsonModerationStore("./_demo_moderation_records.json")
     service = ModerationService(store=store)
 
-    # Cenário 1: obra autoral original, tudo declarado -> deve aprovar
+
     original = PublicationSubmission(
         user_id="user-1",
         title="As Aventuras de Zeca Lagarta",
@@ -39,7 +31,7 @@ def main():
     )
     _print_result("Obra original, com declaração", *service.review(original))
 
-    # Cenário 2: título muito parecido com obra conhecida -> deve rejeitar/pending
+
     suspeito = PublicationSubmission(
         user_id="user-2",
         title="Batman",
@@ -49,7 +41,7 @@ def main():
     )
     _print_result("Título batendo com obra conhecida", *service.review(suspeito))
 
-    # Cenário 3: sem declaração de autoria, mas título neutro -> pending_review
+
     duvidoso = PublicationSubmission(
         user_id="user-3",
         title="Crônicas da Cidade Cinza",

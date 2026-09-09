@@ -1,4 +1,3 @@
-"""Estado persistente específico do leitor."""
 import os
 from .storage import APPDATA_DIR,json_load,json_save
 STATE_FILE=os.path.join(APPDATA_DIR,"reader_state.json")

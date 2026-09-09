@@ -1,8 +1,3 @@
-"""
-Dependências injetadas nas rotas via FastAPI Depends(). Centralizar aqui
-evita cada rota reimplementar "como pegar uma sessão de banco" ou "como
-validar o token" do próprio jeito.
-"""
 
 from __future__ import annotations
 
@@ -22,8 +17,8 @@ def get_db():
 
 
 def get_moderation_service(db: Session = Depends(get_db)) -> ModerationService:
-    # A mesma sessão é reutilizada pelo FastAPI na requisição. Isso coloca
-    # Comic, decisão de moderação e Publication na mesma transação.
+
+
     return ModerationService(store=SqlAlchemyModerationStore(db))
 
 
@@ -31,11 +26,7 @@ def get_current_user(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> User:
-    """
-    Uso: `user: User = Depends(get_current_user)` em qualquer rota.
-    O FastAPI resolve get_db() automaticamente por baixo — não precisa
-    passar db manualmente.
-    """
+    pass
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token ausente ou inválido.")
     token = authorization.removeprefix("Bearer ").strip()

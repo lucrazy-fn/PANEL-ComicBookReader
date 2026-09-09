@@ -24,6 +24,26 @@ from panel_backend.moderation.db_models import ModerationRecordRow
 router = APIRouter(prefix="/publications", tags=["publications"])
 
 
+@router.delete("/{publication_id}", status_code=204)
+def remove_publication(publication_id: str, user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    publication = db.get(Publication, publication_id)
+    if publication is None or publication.user_id != user.id:
+        raise HTTPException(404, "Publicação não encontrada.")
+    asset = db.scalar(select(PublicationAsset).where(PublicationAsset.publication_id == publication_id))
+    if asset is not None:
+        db.delete(asset)
+        db.flush()
+
+    db.delete(publication)
+    db.flush()
+
+def _asset_available(asset: PublicationAsset | None) -> bool:
+    if asset is None:return False
+    try: resolve_asset(asset.stored_name);return True
+    except FileNotFoundError:return False
+
+
 def _authorized_asset(
     publication_id: str, authorization: str | None, db: Session,
 ) -> PublicationAsset:
@@ -100,11 +120,6 @@ async def upload_file(
     except UnsafeAssetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    duplicate = db.scalar(select(PublicationAsset).where(PublicationAsset.sha256 == sha256))
-    if duplicate is not None:
-        resolve_asset(stored_name).unlink(missing_ok=True)
-        raise HTTPException(status_code=409, detail="Este arquivo já foi enviado anteriormente.")
-
     asset = PublicationAsset(
         publication_id=publication_id, stored_name=stored_name,
         original_filename=original, size_bytes=size, sha256=sha256,
@@ -149,7 +164,7 @@ def mine(
             created_at=publication.created_at,
             published_at=publication.published_at,
             decision_reason=record.manual_override_reason if record else None,
-            has_file=asset is not None,
+            has_file=_asset_available(asset),
             original_filename=asset.original_filename if asset else None,
             series_title=comic.series_title, chapter_number=comic.chapter_number,
         )
@@ -164,12 +179,7 @@ def submit(
     user: User = Depends(get_current_user),
     moderation_service: ModerationService = Depends(get_moderation_service),
 ):
-    """
-    Requer conta (modo convidado não pode publicar na comunidade — só
-    usar o leitor/biblioteca local). O status retornado nunca é uma
-    garantia jurídica, só o resultado da triagem — ver
-    panel_backend/moderation/models.py:ModerationResult.public_message().
-    """
+    pass
     outcome = catalog.submit_publication(
         db,
         moderation_service=moderation_service,
@@ -198,12 +208,7 @@ def submit(
 
 @router.get("/discovery", response_model=list[DiscoveryItem])
 def discovery(db: Session = Depends(get_db)):
-    """
-    Pública, sem autenticação — mas só retorna o que passou pela
-    moderação com status 'approved'. Esta é a ÚNICA query que deveria
-    alimentar a futura página de descoberta; nunca listar Publication
-    direto sem esse filtro.
-    """
+    pass
     rows = db.execute(
         select(Publication, Comic, PublicationAsset)
         .join(Comic, Comic.id == Publication.comic_id)
@@ -230,5 +235,5 @@ def discovery(db: Session = Depends(get_db)):
             original_filename=asset.original_filename if asset else None,
             series_title=comic.series_title, chapter_number=comic.chapter_number,
         )
-        for pub, comic, asset in rows
+        for pub, comic, asset in rows if _asset_available(asset)
     ]

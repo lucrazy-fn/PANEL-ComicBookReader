@@ -1,4 +1,3 @@
-"""Cache offline do catálogo da comunidade."""
 import os,time
 from .storage import APPDATA_DIR,json_load,json_save
 CACHE_FILE=os.path.join(APPDATA_DIR,"community_catalog.json")

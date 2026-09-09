@@ -1,19 +1,3 @@
-"""
-Analisador v1: regras simples sobre metadados, sem IA e sem visão
-computacional. É o que o pedido original chamou de "não implementar algo
-extremamente complexo na primeira versão".
-
-O que ele checa:
-  1. Título/autor muito parecidos com uma obra conhecida (fuzzy match)
-  2. Ausência de declaração de autoria/autorização
-  3. Presença de licença informada (reduz risco)
-  4. Metadados embutidos no arquivo (ex: campo "Publisher" de ComicInfo.xml)
-     batendo com editoras conhecidas
-
-Isso é deliberadamente simples — o objetivo é ter uma triagem honesta e
-auditável no dia 1, não um sistema que "parece" inteligente mas na
-prática é uma caixa-preta.
-"""
 
 from __future__ import annotations
 
@@ -25,11 +9,11 @@ from panel_backend.moderation.models import (
     RiskLevel,
 )
 
-# Acima disso, consideramos que título/autor "batem" com uma obra conhecida.
+
 TITLE_MATCH_THRESHOLD = 0.82
 
-# Editoras/estúdios comerciais grandes — se aparecerem em metadados
-# embutidos, isso é um sinal forte, mesmo sem bater no fuzzy match do título.
+
+
 KNOWN_PUBLISHER_SIGNALS = {
     "marvel", "dc comics", "shueisha", "kodansha", "viz media",
     "mauricio de sousa", "panini", "image comics", "dark horse",
@@ -46,9 +30,9 @@ class MetadataRulesAnalyzer(BaseAnalyzer):
         reasons: list[str] = []
         signals: dict = {}
         risk = RiskLevel.LOW
-        confidence = 0.4  # regras simples nunca merecem confiança alta
+        confidence = 0.4
 
-        # 1. Fuzzy match do título contra obras conhecidas
+
         match = self._known_works.best_match(submission.title)
         if match:
             work, score = match
@@ -68,20 +52,20 @@ class MetadataRulesAnalyzer(BaseAnalyzer):
                     f"('{work.title}')."
                 )
 
-        # 2. Ausência de declaração de autoria/autorização
+
         if not submission.authorship_declared and not submission.authorization_declared:
             reasons.append(
                 "Usuário não declarou autoria nem autorização para publicação."
             )
             risk = _max_risk(risk, RiskLevel.MEDIUM)
 
-        # 3. A licença é somente uma declaração do usuário. Ela é registrada
-        # como sinal, mas não reduz risco automaticamente sem validação.
+
+
         if submission.license:
             signals["license"] = submission.license
             reasons.append(f"Licença informada pelo usuário: '{submission.license}'.")
 
-        # 4. Metadados embutidos no arquivo (ex.: ComicInfo.xml -> Publisher)
+
         embedded_publisher = str(
             submission.embedded_metadata.get("publisher", "")
         ).strip().lower()

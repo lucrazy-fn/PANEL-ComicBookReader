@@ -1,9 +1,18 @@
 [Setup]
+AppId={{45B7906A-4DE9-4C45-90C0-6E43D8A48A40}
+AppVerName=PANEL 1.3
+AppPublisher=lucrazy-fn
+AppPublisherURL=https://github.com/lucrazy-fn/PANEL-ComicBookReader
+PrivilegesRequired=lowest
+SetupIconFile=..\panel.ico
+UninstallDisplayIcon={app}\PANEL.exe
+LicenseFile=..\LICENSE
+OutputDir=..\dist\installer
 AppName=PANEL Comic Reader
-AppVersion=1.2.0
-DefaultDirName={autopf}\PANEL Comic Reader
+AppVersion=1.3.0
+DefaultDirName={localappdata}\Programs\PANEL
 DefaultGroupName=PANEL Comic Reader
-OutputBaseFilename=Panel-Setup
+OutputBaseFilename=PANEL-Setup-1.3.0
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

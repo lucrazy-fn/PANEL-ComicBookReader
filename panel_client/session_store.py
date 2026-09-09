@@ -1,11 +1,3 @@
-"""
-Guarda a sessão (token + dados básicos do usuário) localmente, no mesmo
-padrão de pasta que o resto do ComicReader.py já usa
-(%APPDATA%/Panel/*.json). Assim o usuário não precisa logar de novo toda
-vez que abre o app — igual funciona hoje com prefs.json.
-
-Ausência de sessão salva = modo convidado. Nunca é tratado como erro.
-"""
 
 from __future__ import annotations
 
@@ -38,8 +30,8 @@ def load_session() -> Optional[LocalSession]:
             data = json.load(f)
         return LocalSession(**data)
     except Exception:
-        # Arquivo corrompido/formato antigo -> trata como "sem sessão",
-        # nunca trava o app por causa disso.
+
+
         return None
 
 

@@ -1,4 +1,3 @@
-"""Operações de coleção sem dependência da interface gráfica."""
 from pathlib import Path
 def group_by_folder(paths):
     result={}

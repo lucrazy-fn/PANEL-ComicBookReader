@@ -1,13 +1,3 @@
-"""
-Comic: metadados de um quadrinho enviado por um usuário.
-Publication: o "ato" de tornar um Comic visível na comunidade — carrega
-o status vindo da moderação. Um Comic pode existir sem Publication (ex:
-está só na biblioteca pessoal do usuário, nunca foi enviado à comunidade).
-
-moderation_record_id aponta para a trilha de auditoria persistida no mesmo
-banco pela camada de moderação. A coluna permanece string para manter o
-catálogo desacoplado da implementação do armazenamento.
-"""
 
 from __future__ import annotations
 
@@ -37,9 +27,9 @@ class Comic(Base):
     title: Mapped[str] = mapped_column(String(255))
     author: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
-    tags: Mapped[str] = mapped_column(String(255), default="")  # CSV simples por enquanto
+    tags: Mapped[str] = mapped_column(String(255), default="")
 
-    file_reference: Mapped[str] = mapped_column(String(512))  # caminho/chave de storage
+    file_reference: Mapped[str] = mapped_column(String(512))
     license: Mapped[str | None] = mapped_column(String(64), nullable=True)
     series_title: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     chapter_number: Mapped[int | None] = mapped_column(nullable=True)
@@ -61,9 +51,9 @@ class Publication(Base):
     comic_id: Mapped[str] = mapped_column(ForeignKey("comics.id"), unique=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
 
-    # Espelha panel_backend.moderation.models.ModerationStatus, mas guardado
-    # como string simples aqui pra este módulo não depender do pacote de
-    # moderação em nível de import de enum (evita acoplamento circular).
+
+
+
     status: Mapped[str] = mapped_column(String(32), default="pending_review")
     risk_level: Mapped[str] = mapped_column(String(16), default="medium")
     moderation_record_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -74,7 +64,7 @@ class Publication(Base):
     comic: Mapped["Comic"] = relationship(back_populates="publication")
 
     def is_visible_to_community(self) -> bool:
-        """Única checagem que a futura página de descoberta deveria usar."""
+        pass
         return self.status == "approved"
 
 

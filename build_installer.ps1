@@ -1,7 +1,18 @@
+param([switch]$ExecutableOnly)
 $ErrorActionPreference = "Stop"
-$Python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
-if (-not (Test-Path -LiteralPath $Python)) { throw "Ambiente .venv não encontrado." }
-& $Python -m pip install pyinstaller
-& $Python -m PyInstaller --noconfirm --clean --windowed --name PANEL --icon panel.ico --add-data "Icons;Icons" --add-data "panellogo.png;." --add-data "panel.ico;." --collect-all pymupdf -m panel_app
-if (Get-Command iscc.exe -ErrorAction SilentlyContinue) { iscc.exe "installer\Panel.iss" }
-else { Write-Host "Executável criado em dist\PANEL. Instale o Inno Setup para gerar Panel-Setup.exe." }
+Push-Location $PSScriptRoot
+try {
+    $BuildPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $BuildPython)) { throw "Crie a .venv conforme o README." }
+    & $BuildPython -c "import PyInstaller, tkinter, PIL, pymupdf, requests, rarfile; tkinter.Tcl()"
+    if ($LASTEXITCODE -ne 0) { throw 'Instale as dependencias: .\.venv\Scripts\python.exe -m pip install -e ".[build]"' }
+    & $BuildPython -m PyInstaller --noconfirm --clean installer\PANEL.spec
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar executavel." }
+    if ($ExecutableOnly) { Write-Host "Executavel: dist\PANEL\PANEL.exe"; return }
+    $Compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    $CompilerPath = if ($Compiler) { $Compiler.Source } else { "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+    if (-not (Test-Path -LiteralPath $CompilerPath)) { throw "Executavel pronto. Instale Inno Setup 6 para gerar o instalador." }
+    & $CompilerPath installer\Panel.iss
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar instalador." }
+    Write-Host "Instalador: dist\installer\PANEL-Setup-1.3.0.exe"
+} finally { Pop-Location }

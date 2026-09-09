@@ -1,6 +1,5 @@
-"""Leitura de CBZ, CBR e PDF e cache de páginas em memória."""
 from __future__ import annotations
-import io, os, re, threading, zipfile
+import io, os, re, threading, zipfile, shutil, subprocess
 from pathlib import Path
 from PIL import Image, ImageDraw
 try:
@@ -12,18 +11,43 @@ try:
 except ImportError: fitz=None
 
 IMG_EXTS={".jpg",".jpeg",".png",".webp",".gif",".bmp"}
+SUPPORTED_EXTENSIONS=(".cbz", ".cbr", ".zip", ".rar", ".pdf", ".7z", ".cb7", ".tar", ".cbt")
+
+def find_7zip():
+    candidates = [os.environ.get("PANEL_7ZIP_PATH"), shutil.which("7z"), shutil.which("7zz"),
+                  r"C:\Program Files\7-Zip\7z.exe", r"C:\Program Files (x86)\7-Zip\7z.exe"]
+    return next((str(p) for p in candidates if p and Path(p).is_file()), None)
+
+def run_7zip(executable, arguments):
+    try:
+        result = subprocess.run([executable, *arguments], stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("O 7-Zip demorou demais para abrir o arquivo.") from exc
+    if result.returncode != 0:
+        raise ValueError("O 7-Zip não conseguiu ler o arquivo. Verifique se está íntegro e sem senha.")
+    return result.stdout
 def natural_key(value): return [int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)',str(value))]
 class ArchiveBackend:
     def __init__(self,path): self.path=path; self.kind=None; self.names=[]; self._pdf_doc=None; self._detect()
     def _detect(self):
+        self._seven_zip = find_7zip()
         suffix=Path(self.path).suffix.lower()
         if zipfile.is_zipfile(self.path):
             self.kind="zip"
             with zipfile.ZipFile(self.path) as source: self.names=sorted([n for n in source.namelist() if Path(n).suffix.lower() in IMG_EXTS and not Path(n).name.startswith('.')],key=natural_key)
+        elif self._seven_zip and suffix in {".rar", ".cbr", ".7z", ".cb7", ".tar", ".cbt"}:
+            self.kind="7zip"
+            listing=run_7zip(self._seven_zip,["l","-slt","-ba","-sccUTF-8","--",str(Path(self.path).resolve())]).decode("utf-8")
+            self.names=sorted([line[7:] for line in listing.splitlines() if line.startswith("Path = ")
+                and Path(line[7:]).suffix.lower() in IMG_EXTS and not Path(line[7:]).name.startswith(".")],key=natural_key)
         elif rarfile and rarfile.is_rarfile(self.path):
             self.kind="rar"
             with rarfile.RarFile(self.path) as source: self.names=sorted([n for n in source.namelist() if Path(n).suffix.lower() in IMG_EXTS and not Path(n).name.startswith('.')],key=natural_key)
         elif fitz and suffix==".pdf": self.kind="pdf"; self._pdf_doc=fitz.open(self.path); self.names=[f"page_{i}" for i in range(self._pdf_doc.page_count)]
+        elif suffix in {".7z", ".cb7", ".tar", ".cbt"}:
+            raise ValueError("Instale o 7-Zip ou configure PANEL_7ZIP_PATH com o caminho do 7z.exe.")
         else: raise ValueError(f"Formato não suportado: {suffix}")
     @property
     def count(self): return len(self.names)
@@ -33,12 +57,17 @@ class ArchiveBackend:
             with zipfile.ZipFile(self.path) as source:return source.read(self.names[index])
         if self.kind=="rar":
             with rarfile.RarFile(self.path) as source:return source.read(self.names[index])
+        if self.kind=="7zip":
+            return run_7zip(self._seven_zip,["x","-so","-spd","--",str(Path(self.path).resolve()),self.names[index]])
         page=self._pdf_doc.load_page(index); return page.get_pixmap(matrix=fitz.Matrix(2,2)).tobytes("png")
     def close(self):
         if self._pdf_doc: self._pdf_doc.close(); self._pdf_doc=None
 def extract_cover_only(path):
     backend=ArchiveBackend(path)
-    try:return backend.read_page(0)
+    try:
+        if backend.count == 0:
+            raise ValueError("O arquivo não contém páginas de imagem reconhecidas.")
+        return backend.read_page(0)
     finally:backend.close()
 def pil_from_bytes(data): return Image.open(io.BytesIO(data)).convert("RGBA")
 def rounded_image(image,radius):

@@ -1,16 +1,3 @@
-"""
-Aqui é onde o fluxo completo se encontra:
-
-    Usuário → Upload → Análise de moderação → Aprovação/Revisão → Publicação
-
-`submit_publication()` é a única função que a futura rota de upload da API
-deveria chamar. Ela:
-  1. Cria o registro do Comic
-  2. Monta a submissão de moderação a partir dos dados do Comic + usuário
-  3. Chama o ModerationService (já pronto, sistema anterior)
-  4. Guarda o risco sugerido pelo analisador
-  5. Envia toda publicação para decisão humana antes de torná-la pública
-"""
 
 from __future__ import annotations
 
@@ -25,7 +12,7 @@ from panel_backend.moderation.service import ModerationService
 
 @dataclass
 class SubmissionInput:
-    """O que a UI (tela de publicação) precisa coletar do usuário."""
+    pass
     title: str
     author: str
     description: str
@@ -66,7 +53,7 @@ def submit_publication(
         chapter_number=data.chapter_number,
     )
     db.add(comic)
-    db.flush()  # garante comic.id preenchido
+    db.flush()
 
     submission = PublicationSubmission(
         user_id=user_id,
@@ -85,7 +72,7 @@ def submit_publication(
     publication = Publication(
         comic_id=comic.id,
         user_id=user_id,
-        # A automação sugere risco, mas não publica nem rejeita sozinha.
+
         status="pending_review",
         risk_level=result.risk_level.value,
         moderation_record_id=record.record_id,

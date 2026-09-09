@@ -1,12 +1,3 @@
-"""
-Guarda o histórico de decisões de moderação — necessário desde já para
-viabilizar (no futuro) revisão manual, denúncias e apelações (ponto 7 do
-pedido original), mesmo que essas features ainda não existam.
-
-A API usa SqlAlchemyModerationStore para manter a decisão na mesma transação
-da publicação. JsonModerationStore continua disponível para demos e para
-ler dados legados criados pelas primeiras versões.
-"""
 
 from __future__ import annotations
 
@@ -28,7 +19,7 @@ from panel_backend.moderation.models import ModerationResult, ModerationStatus, 
 
 @dataclass
 class ModerationRecord:
-    """Uma decisão de moderação, associada a uma publicação, com histórico."""
+    pass
     record_id: str
     publication_title: str
     user_id: str
@@ -37,13 +28,13 @@ class ModerationRecord:
     confidence: float
     internal_justification: str
     created_at: str
-    # Preparado para o futuro: revisão manual sobrescreve o status automático
+
     manual_override_status: Optional[ModerationStatus] = None
     manual_override_reason: Optional[str] = None
     manual_reviewer_id: Optional[str] = None
 
     def effective_status(self) -> ModerationStatus:
-        """Status que deve valer de fato — revisão manual tem prioridade."""
+        pass
         return self.manual_override_status or self.status
 
     def to_dict(self) -> dict:
@@ -65,11 +56,7 @@ class ModerationRecord:
 
 
 class ModerationStore:
-    """
-    Interface mínima de persistência. `JsonModerationStore` é a
-    implementação v1; troque por uma baseada em banco depois sem alterar
-    quem consome (`ModerationService`).
-    """
+    pass
 
     def save(self, result: ModerationResult, publication_title: str) -> ModerationRecord:
         raise NotImplementedError
@@ -82,7 +69,7 @@ class ModerationStore:
 
 
 class SqlAlchemyModerationStore(ModerationStore):
-    """Persistência transacional usada pela API."""
+    pass
 
     def __init__(self, db: Session):
         self._db = db
@@ -148,7 +135,7 @@ class JsonModerationStore(ModerationStore):
                 return json.load(f)
 
     def _save_all(self, records: list[dict]) -> None:
-        # Gravação atômica: uma interrupção não deixa o JSON pela metade.
+
         directory = os.path.dirname(os.path.abspath(self._file_path))
         with self._lock:
             fd, temp_path = tempfile.mkstemp(prefix="moderation-", suffix=".tmp", dir=directory)
@@ -173,8 +160,8 @@ class JsonModerationStore(ModerationStore):
             internal_justification=result.internal_justification,
             created_at=result.evaluated_at.isoformat(),
         )
-        # O lock cobre leitura + alteração + escrita para evitar perda de
-        # registros quando duas requisições chegam ao mesmo tempo.
+
+
         with self._lock:
             records = self._load_all()
             records.append(record.to_dict())

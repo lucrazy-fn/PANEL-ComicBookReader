@@ -1,11 +1,3 @@
-"""
-Modelos de conta de usuário.
-
-Modo convidado NÃO gera um registro aqui — "continuar como convidado"
-significa simplesmente não ter usuário/token, e o ComicReader.py continua
-usando o armazenamento local (JSON) que já existe hoje, sem tocar nesse
-módulo. Só quem cria conta passa a existir nesta tabela.
-"""
 
 from __future__ import annotations
 
@@ -23,8 +15,8 @@ def _uuid() -> str:
 
 
 def _now() -> datetime:
-    # SQLite armazena DateTime sem fuso; geramos UTC explicitamente e
-    # removemos apenas o tzinfo na borda de persistência.
+
+
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
@@ -56,12 +48,7 @@ class User(Base):
 
 
 class SessionToken(Base):
-    """
-    Token opaco de sessão (não é JWT). Escolha deliberada pra v1: mais
-    simples de revogar (basta apagar a linha) e não exige biblioteca
-    externa de JWT. Pode ser trocado por JWT depois sem mudar o resto do
-    sistema — quem consome só chama `accounts.service.get_user_by_token`.
-    """
+    pass
     __tablename__ = "session_tokens"
 
     token: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex + uuid.uuid4().hex)
@@ -78,7 +65,7 @@ class SessionToken(Base):
 
 
 class ModeratorInvite(Base):
-    """Convite temporário; o segredo original nunca é armazenado."""
+    pass
 
     __tablename__ = "moderator_invites"
 
@@ -96,7 +83,7 @@ class ModeratorInvite(Base):
 
 
 class AdminAuditLog(Base):
-    """Registro imutável das ações executadas no painel administrativo."""
+    pass
 
     __tablename__ = "admin_audit_logs"
 

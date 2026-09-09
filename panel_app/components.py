@@ -1,4 +1,3 @@
-"""Pequenos utilitários reutilizáveis de interface."""
 import threading
 def background(root,work,done):
     def run():
